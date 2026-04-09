@@ -113,7 +113,7 @@ git push $REMOTE $SOURCE_BRANCH --force-with-lease
 
 ## Step 2: Gather Context
 
-Determine the last release tag and collect the changes that will be released:
+Determine the last release tag and collect the changes in `$RANGE`:
 
 ```bash
 # Get the latest CalVer tag
