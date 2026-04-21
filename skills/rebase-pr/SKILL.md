@@ -151,12 +151,21 @@ Do NOT add the contributor's fork as a remote — push directly using the URL.
 ### 13. Post PR comment
 
 Draft a comment explaining what happened and **show it to the user for approval before posting**. The comment should:
-- Explain that main has moved forward and the branch was rebased
-- Mention the strategy used (rebase or cherry-pick)
+- State what was done (rebase or cherry-pick) and any notable changes (e.g. migration renames)
 - Reference the backup branch on origin so the original state can be recovered (include a link to it)
-- Keep the tone friendly and helpful
 
-Example:
+**Tone depends on the contributor:**
+- **Core contributors**: Direct and concise. No greeting, no explaining that main moved forward — they know the workflow. Just state what was done.
+- **Non-core / new contributors**: Warm and friendly. Greet them ("Hey!"), explain context ("Main has moved forward and your branch was out of sync"), be welcoming.
+
+Example for core contributor:
+```
+Rebased your commits on top of the current main and force-pushed the result.
+
+The original branch state before the rebase is preserved at [`backup/pr-<PR#>-original`](https://github.com/<origin-owner>/<origin-repo>/tree/backup/pr-<PR#>-original), so nothing is lost.
+```
+
+Example for new contributor:
 ```
 Hey! Main has moved forward and your branch was out of sync. I've rebased your commits on top of the current main and force-pushed the result to this PR branch.
 
