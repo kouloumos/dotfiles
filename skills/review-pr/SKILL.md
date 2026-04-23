@@ -51,7 +51,7 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 
 ### Agent 1: Data Layer & Schema Review
 
-**When to include:** Schema files, migrations, seed files, ORM config, or database query files changed.
+**When to include:** Schema files, migrations, seed files, ORM config, database query files, or API routes changed.
 
 **Prompt template for the agent:**
 
@@ -66,12 +66,18 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 > - Query patterns: N+1 queries, missing indexes for query patterns, transaction boundaries
 > - Seed data: consistency with schema, type handling (dates, enums), relation integrity
 > - ORM usage: proper typing, connection handling, raw query safety
+> - Type derivation: types that represent DB query results should be derived from the ORM (e.g. Prisma's `satisfies` + `GetPayload` pattern), not manually defined as `Type & { ... }`. Manual type definitions drift when the schema or query changes.
+> - CRUD boilerplate: when the input type already matches the ORM's expected shape, data should be passed directly — not destructured and reassembled field-by-field. Manual field mapping is a maintenance burden and a source of bugs when fields are added.
+> - Data layer bypass: API routes and components must use existing data access functions (e.g. from `lib/db/`) rather than writing inline ORM queries. Inline queries bypass shared logic (filtering, authorization, defaults) and create maintenance duplication.
+> - Duplicate query functions: check if a new query function duplicates or nearly duplicates an existing one. If two functions do the same thing with minor differences (e.g. one filters deprecated records, the other doesn't), they should be consolidated.
 >
 > **How to review:**
 > 1. Run `git diff {BASE}..HEAD` filtered to relevant files to see the changes
 > 2. For each changed file, also read the full file for context (not just the diff)
 > 3. When reviewing queries, check if the fields being queried have appropriate indexes
 > 4. For migrations, verify they are safe to run on a production database with data
+> 5. For any new type definition that represents a DB result, check if it could be derived from the ORM instead
+> 6. For any new API route with a DB query, check if an equivalent function already exists in the data access layer
 >
 > **Output format:**
 > Return a structured list of findings. For each finding:
@@ -135,8 +141,11 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 > - API design: correct HTTP methods and status codes, proper error responses (don't leak internals), consistent patterns across routes
 > - Input validation: runtime validation at system boundaries, not just TypeScript annotations. Look for routes that trust request body shape without parsing it through a schema.
 > - Pattern consistency: new routes and components must follow the same patterns as existing ones in the codebase. Actively compare against sibling routes/components (e.g., if other admin routes use Zod schemas for validation, new admin routes should too — not hand-rolled `typeof` checks). Check for: auth patterns, error handling patterns, validation approach, response shapes, state management approach.
+> - Hardcoded data that duplicates DB fields: watch for static maps, constants, or switch statements that replicate data already stored in the database (e.g. a hardcoded icon-per-category map when the DB model has an `icon` field). These drift silently when the DB is updated. The component should read the value from the data it already has.
+> - Duplicate components: if a new component is structurally similar to an existing one (same data shape, similar rendering, similar interactions), flag it. They should be consolidated into a single reusable component with props for the differences.
 > - React patterns: unnecessary re-renders, missing cleanup in effects, stale closures, proper key usage
 > - State management: derived state that should be computed, inconsistent state updates, race conditions in async state
+> - Controlled vs uncontrolled: components that fetch their own data AND manage selection state internally are hard to reuse. Prefer controlled components (receive data + state from parent, report changes via callbacks) with shared hooks for data fetching.
 > - Accessibility: missing ARIA labels, keyboard navigation, focus management
 > - i18n: hardcoded user-facing strings that should use translation functions
 >
@@ -145,6 +154,7 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 > 2. For each API route, verify: auth check present AND awaited, input validated with schema, error responses use correct status codes
 > 3. For each component, check: proper cleanup, no inline object/function creation in render causing re-renders, proper loading/error states
 > 4. **Critically: for each new route or component, read 1-2 existing siblings** (routes in the same directory, components serving similar functions) and compare patterns. Flag deviations — the PR should match the established approach unless there's a good reason not to.
+> 5. For components that render entity-specific data (icons, colors, labels), verify they read from the data model rather than hardcoding a mapping. Search for static maps or constants that mirror DB fields.
 >
 > **Output format:**
 > Return a structured list of findings. For each finding:
