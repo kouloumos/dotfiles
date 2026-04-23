@@ -219,11 +219,13 @@ After all agents complete, **you** (not another agent) must:
    - A missing validation + a missing test = higher risk
    - A logic bug + duplicated logic = the bug exists in two places
 
-4. **Re-assess severity** based on the full picture:
+4. **Verify Major and Critical findings:** For any finding rated Major or Critical, read the relevant code yourself before including it in the report. Agent findings are hypotheses, not facts — agents may misunderstand framework behavior, miss context from files they didn't read, or make wrong assumptions. If you can't confirm the issue by reading the code, downgrade or drop it.
+
+5. **Re-assess severity** based on the full picture:
    - A "Minor" from one agent might become "Major" when combined with a related finding
    - A "Major" might become "Minor" if another agent found a mitigating factor
 
-5. **Organize into the final report**
+6. **Organize into the final report**
 
 ## Final Report Format
 
