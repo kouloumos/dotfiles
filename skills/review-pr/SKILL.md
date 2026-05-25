@@ -105,6 +105,7 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 > - Data integrity: transaction boundaries for multi-step writes, race conditions, partial failure states
 > - Logic duplication (within the PR): same code block repeated in multiple new files (should be extracted to a shared utility)
 > - Missed reuse of existing code: new code that reimplements something that already exists in the codebase. Search for existing utilities, helpers, types, and patterns that the PR should be using instead of rolling its own. Common examples: validation logic, error classes, formatting functions, data transformation helpers.
+> - Type consistency: when an interface or type alias is defined, check that all functions producing or consuming that shape actually reference it rather than defining the same shape inline. Look for return type annotations like `Promise<{ success: boolean; error?: string; ... }>` repeated across multiple functions — these should use a shared named type. Also check for near-duplicate type definitions (same fields minus one or two) that should use `extends`, `Pick`, or `Omit` to express the relationship. Inline types that repeat the same shape drift silently when one is updated but the others aren't.
 > - Error handling: swallowed errors, missing error cases, incorrect error types at system boundaries
 > - Performance: N+1 patterns, unbounded loops, unnecessary re-computation, large data in memory
 >
@@ -115,6 +116,7 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 > 4. Pay special attention to filter/map/reduce chains and boolean conditions
 > 5. Look for falsy value bugs: `if (x)` where x could legitimately be 0, empty string, or false
 > 6. For any new utility, helper, constant, or pattern introduced by the PR, search the codebase for existing equivalents. Check sibling directories and files that do similar things.
+> 7. For type consistency: collect all inline return types and parameter types across the PR's changed files. Group by shape similarity. If two or more functions define the same or near-identical shape inline, flag it — there should be a single named interface. If a named interface already exists but functions don't reference it, flag that too.
 >
 > **Output format:**
 > Return a structured list of findings. For each finding:
