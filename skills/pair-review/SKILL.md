@@ -57,7 +57,7 @@ For each piece of new functionality the PR adds, check whether it has a correspo
 2. **Check for asymmetric coverage.** A common pattern: contributor tests `createUser` P2002 handling but forgets the equivalent `deleteUser` P2025 path even though both were added. Look for these "did one but not the other" gaps.
 3. **Note gaps as review findings** — these are things to mention in the review, not blockers.
 
-### Manual verification (propose, don't run)
+### Manual verification
 
 Based on what the PR changes, identify what would need manual testing that CI doesn't cover:
 
@@ -68,7 +68,25 @@ Based on what the PR changes, identify what would need manual testing that CI do
 
 2. **List what needs human eyes.** For anything that requires a browser, specific test data, or external services, tell the user exactly what to check and how. Be specific: "start the dev server, open `/en/chania/rss.xml`, verify the XML has meeting items with nested subjects" — not "test the feature manually."
 
-**Present to the user:** CI status summary, test coverage gaps, and what still needs manual checking. Then move into Phase 2.
+3. **Offer to set up test data.** If the changes need specific data to exercise (new UI states, new query paths, edge cases), offer to seed it. Ask the user which environment:
+
+   **Option A: Local DB**
+   - Check `DATABASE_URL` in `.env` — verify it points to localhost. **Never seed a remote database without explicit confirmation.**
+   - Read the schema (`prisma/schema.prisma`) to understand models, relations, and constraints.
+   - Analyze the diff to determine what data paths are exercised — what entities need to exist, what field values trigger the new behavior, what edge cases matter.
+   - Seed the data using `psql` via the project's database access pattern (check CLAUDE.md for connection instructions).
+   - Tell the user exactly what was created and what to look for in the UI.
+
+   **Option B: Preview DB (staging)**
+   - Check if this PR has an isolated DB (migration PRs) or uses shared staging. Look for `prisma/migrations/` changes in the diff, or check the preview deployment docs.
+   - **Isolated DB** (migration PRs): connect directly — `psql -h 127.0.0.1 -p $((5432 + PR_NUM)) -U opencouncil -d opencouncil` on the droplet.
+   - **Shared staging DB**: connect using the staging `DATABASE_URL` from the preview env file. Modify existing records to match the test scenario — real data is closer to reality than synthetic inserts. Ask the user before destructive operations (deletes, truncates), but updates to exercise new code paths are fine.
+   - For both: read the schema, analyze the diff, set up appropriate data, and tell the user the preview URL + what to verify.
+   - Preview URLs follow the pattern: `https://pr-<N>.preview.opencouncil.gr`
+
+   **How to determine what data is needed:** Don't ask the user what to create. Read the diff, understand what code paths are new or changed, read the schema to understand the data model, and figure out what records need to exist (or be modified) for those paths to be exercised. Include edge cases — if the diff handles a null case, create a record that triggers it. If it shows different UI for different enum values, ensure records exist covering each value.
+
+**Present to the user:** CI status summary, test coverage gaps, what needs manual checking, and the offer to set up test data. Then move into Phase 2.
 
 ## Phase 2: Co-review
 
