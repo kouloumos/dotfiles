@@ -86,6 +86,22 @@ Based on what the PR changes, identify what would need manual testing that CI do
 
    **How to determine what data is needed:** Don't ask the user what to create. Read the diff, understand what code paths are new or changed, read the schema to understand the data model, and figure out what records need to exist (or be modified) for those paths to be exercised. Include edge cases — if the diff handles a null case, create a record that triggers it. If it shows different UI for different enum values, ensure records exist covering each value.
 
+### Live-testing task endpoints (opencouncil-tasks)
+
+Task endpoints are async: they return immediately and POST progress + result (with a `version` field) to a `callbackUrl`. Request shapes live in `src/types.ts`. To test against a preview (`https://pr-<N>.tasks.opencouncil.gr`):
+
+1. **Auth.** The preview droplet is whatever `pr-<N>.tasks.opencouncil.gr` resolves to — NOT the prod/staging droplet from CLAUDE.md. The API token is in `API_TOKENS` in `/var/lib/opencouncil-tasks-previews/.env` on that droplet (ssh root). Verify with `GET /health` + Bearer token → response includes `"authenticated": true`.
+2. **Check env prerequisites BEFORE firing requests.** Grep the changed code for `process.env.*` and compare against the preview env file. Known structural gaps: previews have placeholder `DO_SPACES_*` values and a stale yt-dlp, so **only stateless endpoints work** (fixTranscript and similar); anything touching storage or downloads fails instantly. For full-pipeline validation, run `./scripts/smoke.sh` locally instead — borrow any missing API key from the preview env file.
+3. **After editing the preview env**, restart the service (`systemctl restart opencouncil-tasks-preview@<4000+N>`). Verify the key actually loaded via `/proc/<MainPID>/environ` — `systemctl show -p Environment` does NOT show `EnvironmentFile` vars and gives a false negative.
+4. **Callback capture: local listener + ngrok, never a listener on the droplet** (NixOS bare PATH has no python/node). The dev shell ships authenticated ngrok:
+   ```bash
+   python3 listener.py &   # tiny HTTP server appending POST bodies to a .jsonl
+   nix develop --command ngrok http 8787 &
+   curl -s localhost:4040/api/tunnels   # → public URL for callbackUrl
+   ```
+   `callbackUrl` must be a domain or localhost — `validateUrl` rejects bare IPs.
+5. **Isolate new inputs.** When testing a new field's effect (e.g. a new prompt input), run an A/B pair: one request with the field, a control without — and make the expected outcome reachable ONLY through the new field. If the same answer is derivable from another input (e.g. a name present in both roster and agenda), the test proves nothing.
+
 **Present to the user:** CI status summary, test coverage gaps, what needs manual checking, and the offer to set up test data. Then move into Phase 2.
 
 ## Phase 2: Co-review
