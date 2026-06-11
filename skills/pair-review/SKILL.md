@@ -112,13 +112,31 @@ This is interactive. The user steers the review.
 - When you need to validate an assumption, use the worktree — run tests, try things, read surrounding code.
 - **Ask "what's missing?"** — Given the PR's stated goal, are there related files that should have been modified but weren't? For example: if the PR extracts a utility, did it update all existing call sites? If it adds error handling to `createUser`, did it also add it to `deleteUser`? New contributors often don't know the full surface area.
 - Surface findings conversationally. Don't write reports.
-- If something is worth fixing: **ask the user** if they want to implement it. If yes, make the change in the worktree, commit, and push. Reference the commit in the eventual review comment.
+- If something is worth fixing: **ask the user** if they want to implement it. If yes, make the change in the worktree, commit, and push. Reference the commit in the eventual review comment. (Most fixes are better deferred to the fix-forward split in Phase 3, where they're classified together — fix immediately only when the user asks or when a later investigation depends on it.)
 
 **Important:** Stay in this phase as long as the user wants. Don't rush to write the review.
 
 ## Phase 3: Draft the review comment
 
 When the user says they're ready to write the review (or asks you to draft it):
+
+### Fix-forward split (team PRs only)
+
+On team-member PRs (e.g. between schemalabz members), don't default every finding to a comment — describing a mechanical fix in prose and waiting a round-trip is slower than shipping it. Before writing the review, classify each finding:
+
+- **Fix-forward** — there is one obviously-correct change: clear bugs, missing error handling, logging/observability gaps, dead code, typos, dangling comments. Implement these instead of describing them.
+- **Comment-only** — tradeoffs the contributor should weigh, design questions, or any fix that embeds an assumption you couldn't verify. When in doubt, comment.
+
+External-contributor PRs are **always comment-only**: commenting teaches, and pushing to their branch takes over their work. For the mechanical findings, use GitHub suggestion blocks (```suggestion fences) so the contributor can apply them with one click, under their own authorship — nearly as fast as fix-forward without the takeover.
+
+**Present the split to the user for approval before implementing anything.** Then, for the approved fix-forward set:
+
+1. One commit per concern — each independently droppable (squash on merge).
+2. Run the project's checks (typecheck, tests) before pushing. Confirm with the user before pushing — it's a public action.
+3. Verify revertability with a `git revert --no-commit <sha>` dry-run (then `git revert --abort`). No backup branches needed when commits revert cleanly.
+4. In the review, reference each commit where the comment would have been ("solved with `abc123` — squash or drop as you see fit") and include the escape hatch: the exact copy-pasteable `git revert --no-edit <sha-newest> <sha-oldest>` command, plus a one-line prompt the contributor can hand to their agent ("revert <shas> on <branch>, run typecheck and tests, push").
+
+### Structure
 
 The output has two parts: the **main review comment** and **inline comments** on specific lines/ranges. These complement each other — they must not repeat the same content.
 
