@@ -93,9 +93,9 @@ Task endpoints are async: they return immediately and POST progress + result (wi
 1. **Auth.** The preview droplet is whatever `pr-<N>.tasks.opencouncil.gr` resolves to — NOT the prod/staging droplet from CLAUDE.md. The API token is in `API_TOKENS` in `/var/lib/opencouncil-tasks-previews/.env` on that droplet (ssh root). Verify with `GET /health` + Bearer token → response includes `"authenticated": true`.
 2. **Check env prerequisites BEFORE firing requests.** Grep the changed code for `process.env.*` and compare against the preview env file. Known structural gaps: previews have placeholder `DO_SPACES_*` values and a stale yt-dlp, so **only stateless endpoints work** (fixTranscript and similar); anything touching storage or downloads fails instantly. For full-pipeline validation, run `./scripts/smoke.sh` locally instead — borrow any missing API key from the preview env file.
 3. **After editing the preview env**, restart the service (`systemctl restart opencouncil-tasks-preview@<4000+N>`). Verify the key actually loaded via `/proc/<MainPID>/environ` — `systemctl show -p Environment` does NOT show `EnvironmentFile` vars and gives a false negative.
-4. **Callback capture: local listener + ngrok, never a listener on the droplet** (NixOS bare PATH has no python/node). The dev shell ships authenticated ngrok:
+4. **Callback capture: local listener + ngrok, never a listener on the droplet** (NixOS bare PATH has no python/node). Use the bundled `cb-listener.py` from this skill's directory; the dev shell ships authenticated ngrok:
    ```bash
-   python3 listener.py &   # tiny HTTP server appending POST bodies to a .jsonl
+   python3 <skill-dir>/cb-listener.py /tmp/callbacks.jsonl &
    nix develop --command ngrok http 8787 &
    curl -s localhost:4040/api/tunnels   # → public URL for callbackUrl
    ```
@@ -152,10 +152,23 @@ The output has two parts: the **main review comment** and **inline comments** on
 - Include the file path, line number(s), and the comment text.
 - These carry the actionable detail: what's wrong, what to use instead, suggested code.
 
-### Output format
-Write everything to a single markdown file in the worktree's `.scratch/` directory. Structure it as:
-1. The main review comment text (ready to paste into GitHub's review summary)
-2. A `## Inline comments` section with subsections per file, each noting the line(s) and the comment text
+### Adversarial pass (mandatory, before showing the draft)
+
+Challenge every claim in the draft as if refuting it:
+
+1. **Verified or inferred?** Anything established by reading code, running tests, or logs is a claim; anything reasoned from circumstance is an inference. State inferences as such ("my best reading is...") and turn unverifiable ones into questions for the contributor. Re-check the load-bearing claims — in past reviews this pass caught a finding whose causal story was simply wrong.
+2. **Self-explanatory?** Each comment must make sense to someone without the investigation context. Plain cause-and-effect ("Node's fetch gives up at 5 minutes; this signal fires at 10, so the 5-minute limit always wins"), not compressed jargon. If the user can't follow it, the contributor won't either.
+3. **No incident-time specifics.** "Last night, 02:08" → "a failed staging run". Times date the review and add nothing.
+4. **Does each comment earn its place?** Rare-path and non-blocking observations become a sentence in the main comment (or get dropped), not inline comments. Especially on re-review rounds: if the fundamentals check out, fold the one note worth keeping into the main comment and approve.
+
+### Output: preview, then pending review
+
+1. **Preview in chat first — always.** Show the complete content: the main comment text and every inline comment with its file:line anchor. Iterate until the user approves. Never post anything (even a pending review only they can see) without showing it first; prior approval of earlier drafts does not carry over to new content.
+2. **On approval, stage it as a PENDING review** so the user reads it in the GitHub UI with diff context, edits there, and presses Submit themselves:
+   - Write the payload to a JSON file and POST with `gh api --input` (multi-paragraph bodies with backticks do not survive shell quoting): `{"commit_id": "<full sha of branch tip>", "body": "...", "comments": [{"path", "line", "side": "RIGHT", "body"}, ...]}` to `repos/<owner>/<repo>/pulls/<N>/reviews`. **Omitting `event` is what makes it pending** — including `event` submits it publicly, so only pass it when the user explicitly says "post it directly".
+   - **One pending review per user.** Check for an existing one first (`state == "PENDING"` in the reviews list). If it contains the user's own draft comments, fetch them (`/reviews/<id>/comments`) and fold them verbatim into the new payload before deleting the old review — deleting discards its drafts.
+   - **Anchors must land inside diff hunks.** A `line` outside any hunk fails the whole POST; pick the nearest in-hunk line and reword ("the `Promise.all` below"). Verify after posting: fetch the review's comments and check each `diff_hunk` ends at the intended code.
+3. Keep the payload file in `.scratch/` — it doubles as the draft archive for the session.
 
 ## Voice Profile
 
@@ -177,7 +190,7 @@ Do NOT use emoji, do NOT use structured headers in the comment, do NOT start wit
 
 ## Notes
 
-- The user submits the review manually — never post it via `gh` commands.
+- The user submits the review — you stage it as pending, they press Submit on GitHub. Never include `event` in the review POST (which submits publicly) unless the user explicitly says to post directly, and even then only after they've seen the exact final text.
 - If `my-toolkit worktree create` fails (branch already checked out, etc.), fall back to reading files from the current repo and working with the diff only.
 - The `checkout_pr` shell function may be available in the user's shell for PR checkout — try it if worktree creation has issues.
 - All temporary files go in the scratchpad directory.
