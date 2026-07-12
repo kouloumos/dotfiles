@@ -11,4 +11,5 @@
 ## Dotfiles & Skills
 - Claude Code skills and global config are managed in `~/personal_projects/dotfiles/`
 - `~/.claude/skills` and `~/.claude/CLAUDE.md` are symlinks into that repo
+- The NixOS system config is managed in `nixos/`; `/etc/nixos` is a symlink into that repo
 - When creating or modifying skills or this file, commit in the dotfiles repo
