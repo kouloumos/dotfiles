@@ -2,7 +2,7 @@
     description = "My NixOS configuration";                                                                                                
                                                                                                                                            
     inputs = {                                                                                                                             
-      nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";                                                                                    
+      nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";                                                                                    
       nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";                                                                        
       my-toolkit = {                                                                                                                       
         url = "path:/home/kouloumos/personal_projects/my-toolkit";                                                                         

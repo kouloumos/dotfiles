@@ -134,8 +134,8 @@
   # Enable the X11 windowing system.
   services.xserver.enable = true;
 
-  services.xserver.displayManager.gdm.enable = true;
-  services.xserver.desktopManager.gnome.enable = true;
+  services.displayManager.gdm.enable = true;
+  services.desktopManager.gnome.enable = true;
   
   # Configure keymap in X11
   # services.xserver.xkb.layout = "us";
@@ -145,7 +145,7 @@
   # services.printing.enable = true;
 
   # Enable sound.
-  hardware.pulseaudio.enable = false;
+  services.pulseaudio.enable = false;
   services.pipewire = {
     enable = true;
     alsa.enable = true;                                                                                                                                                                                                        
@@ -213,12 +213,12 @@
      wget
      git
      ffmpeg
-     poppler_utils
+     poppler-utils
      obsidian
      avahi
      gnomeExtensions.tiling-assistant
      gnomeExtensions.gsconnect
-     pkgs.gnome.gnome-shell-extensions
+     pkgs.gnome-shell-extensions
      (vscode-with-extensions.override {
       vscodeExtensions = with vscode-extensions; [
         jnoortheen.nix-ide
