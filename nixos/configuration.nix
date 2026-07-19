@@ -276,6 +276,10 @@
   # Enable the OpenSSH daemon.
   services.openssh.enable = true;
 
+  # Fingerprint reader (Goodix sensor in the power button).
+  # Enroll via GNOME Settings -> Users -> Fingerprint Login, or `fprintd-enroll`.
+  services.fprintd.enable = true;
+
   services.avahi = {
     enable = true;
     hostName = "kouloumos-framework";
