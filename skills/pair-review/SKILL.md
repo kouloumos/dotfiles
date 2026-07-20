@@ -162,15 +162,16 @@ Challenge every claim in the draft as if refuting it:
 4. **Does each comment earn its place?** Rare-path and non-blocking observations become a sentence in the main comment (or get dropped), not inline comments. Especially on re-review rounds: if the fundamentals check out, fold the one note worth keeping into the main comment and approve.
 5. **Already known?** Diff each claim against the PR description and the contributor's own comments. Information they already stated — testing notes, behavior explanations, design rationale — shrinks to a one-line independent confirmation ("re-verified your testing notes on the preview, all check out") or gets dropped. Only genuinely new findings, implications, and citations get full treatment.
 
-### Output: preview, then pending review
+### Output: preview, then post
 
 1. **Preview in chat first — always.** Show the complete content: the main comment text and every inline comment with its file:line anchor. Iterate until the user approves. Never post anything (even a pending review only they can see) without showing it first; prior approval of earlier drafts does not carry over to new content.
-2. **On approval, stage it as a PENDING review** so the user reads it in the GitHub UI with diff context:
+2. **Body-only shortcut.** The pending stage exists so the user can read inline comments in the diff UI — context the chat preview can't show. A review with no inline comments gains nothing from it: the chat preview already is the complete review. So when the review is body-only, skip the pending stage — once the user approves the text and names the verdict, post directly by including `event` in the creation POST (same JSON-file + `gh api --input` mechanics as below, just `{"body", "event"}`).
+3. **Otherwise, on approval, stage it as a PENDING review** so the user reads it in the GitHub UI with diff context:
    - Write the payload to a JSON file and POST with `gh api --input` (multi-paragraph bodies with backticks do not survive shell quoting): `{"commit_id": "<full sha of branch tip>", "body": "...", "comments": [{"path", "line", "side": "RIGHT", "body"}, ...]}` to `repos/<owner>/<repo>/pulls/<N>/reviews`. **Omitting `event` is what makes it pending** — including `event` submits it publicly, so only pass it when the user explicitly says "post it directly".
    - **One pending review per user.** Check for an existing one first (`state == "PENDING"` in the reviews list). If it contains the user's own draft comments, fetch them (`/reviews/<id>/comments`) and fold them verbatim into the new payload before deleting the old review — deleting discards its drafts.
    - **Anchors must land inside diff hunks.** A `line` outside any hunk fails the whole POST; pick the nearest in-hunk line and reword ("the `Promise.all` below"). Verify after posting: fetch the review's comments and check each `diff_hunk` ends at the intended code.
-3. **Submission happens via the API, not the UI.** GitHub's "Finish your review" panel does not render an API-staged body — the textarea shows empty, and submitting from there replaces the staged body with the textarea's content (i.e. wipes it). So: the user reads the pending inline comments in the diff UI, tells you the verdict, and you submit with `gh api repos/<owner>/<repo>/pulls/<N>/reviews/<id>/events -f event=APPROVE` (or `COMMENT` / `REQUEST_CHANGES`). Verify afterwards that the body survived (`.body | length` on the review). Manual UI submission only works if the user pastes the body into the textarea themselves.
-4. Keep the payload file in `.scratch/` — it doubles as the draft archive for the session.
+4. **Submission happens via the API, not the UI.** GitHub's "Finish your review" panel does not render an API-staged body — the textarea shows empty, and submitting from there replaces the staged body with the textarea's content (i.e. wipes it). So: the user reads the pending inline comments in the diff UI, tells you the verdict, and you submit with `gh api repos/<owner>/<repo>/pulls/<N>/reviews/<id>/events -f event=APPROVE` (or `COMMENT` / `REQUEST_CHANGES`). Verify afterwards that the body survived (`.body | length` on the review). Manual UI submission only works if the user pastes the body into the textarea themselves.
+5. Keep the payload file in `.scratch/` — it doubles as the draft archive for the session.
 
 ## Voice Profile
 
@@ -192,7 +193,7 @@ Do NOT use emoji, do NOT use structured headers in the comment, do NOT start wit
 
 ## Notes
 
-- The user decides the verdict — you stage the review as pending, and once they've reviewed it in the GitHub UI and chosen APPROVE/COMMENT/REQUEST_CHANGES, you submit it via the events endpoint (see Output). Never include `event` in the review-creation POST, and never submit before the user has seen the exact final text and named their verdict.
+- The user decides the verdict — for reviews with inline comments, you stage as pending, they read it in the GitHub UI and choose APPROVE/COMMENT/REQUEST_CHANGES, and you submit via the events endpoint; for body-only reviews, they approve the text in chat and you post directly with `event` set (see Output). Either way, never submit before the user has seen the exact final text and named their verdict.
 - If `my-toolkit worktree create` fails (branch already checked out, etc.), fall back to reading files from the current repo and working with the diff only.
 - The `checkout_pr` shell function may be available in the user's shell for PR checkout — try it if worktree creation has issues.
 - All temporary files go in the scratchpad directory.
