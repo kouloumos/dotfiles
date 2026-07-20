@@ -6,6 +6,14 @@
       nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";                                                                        
       my-toolkit = {                                                                                                                       
         url = "path:/home/kouloumos/personal_projects/my-toolkit";                                                                         
+      };
+
+      # Web-access CLIs (page-read, playwright-run). Consumes ONLY the tools
+      # sub-flake, so it inherits just nixpkgs-playwright — none of nix-openclaw's
+      # server-deployment inputs. Switch to github:schemalabz/nix-openclaw?dir=tools
+      # once it's pushed upstream.
+      nix-openclaw-tools = {
+        url = "path:/home/kouloumos/schema-labs/projects/nix-openclaw/tools";
       };                                                                                                                                   
     };                                                                                                                                     
                                                                                                                                            

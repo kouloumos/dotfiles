@@ -28,13 +28,28 @@
         "systems": "systems"
       },
       "locked": {
-        "lastModified": 1783871767,
-        "narHash": "sha256-hopeZtskwb6zn3YZNrhpL7GaKAAXTyg+ISAs2VQKpHk=",
+        "lastModified": 1784464345,
+        "narHash": "sha256-RD2hY1Q8fD6Js1vaXWXipXBkhMsLHeXYFMcxlFDbruo=",
         "path": "/home/kouloumos/personal_projects/my-toolkit",
         "type": "path"
       },
       "original": {
         "path": "/home/kouloumos/personal_projects/my-toolkit",
+        "type": "path"
+      }
+    },
+    "nix-openclaw-tools": {
+      "inputs": {
+        "nixpkgs-playwright": "nixpkgs-playwright"
+      },
+      "locked": {
+        "lastModified": 1784453383,
+        "narHash": "sha256-b+YObsm0Vw6hjx16CrA7WDz75AY1PbRQRrk2QoUxRqg=",
+        "path": "/home/kouloumos/schema-labs/projects/nix-openclaw/tools",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/kouloumos/schema-labs/projects/nix-openclaw/tools",
         "type": "path"
       }
     },
@@ -50,6 +65,22 @@
       "original": {
         "owner": "NixOS",
         "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-playwright": {
+      "locked": {
+        "lastModified": 1767313136,
+        "narHash": "sha256-16KkgfdYqjaeRGBaYsNrhPRRENs0qzkQVUooNHtoy2w=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "ac62194c3917d5f474c1a844b6fd6da2db95077d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-25.05",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -89,6 +120,7 @@
     "root": {
       "inputs": {
         "my-toolkit": "my-toolkit",
+        "nix-openclaw-tools": "nix-openclaw-tools",
         "nixpkgs": "nixpkgs_2",
         "nixpkgs-unstable": "nixpkgs-unstable"
       }

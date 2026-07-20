@@ -209,6 +209,11 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
+    # Web-access CLIs (see the browser-scripting skill). page-read = URL->markdown
+    # reader; playwright-run = raw Playwright scripting (screenshots, interaction).
+    inputs.nix-openclaw-tools.packages.${pkgs.system}.page-read
+    inputs.nix-openclaw-tools.packages.${pkgs.system}.playwright-run
+
      vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
      wget
      git
