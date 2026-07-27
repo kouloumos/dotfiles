@@ -43,11 +43,25 @@ Before launching agents, collect the information they all need.
    - Test files (`__tests__/`, `*.test.*`, `*.spec.*`)
    - Config files (`package.json`, `tsconfig.json`, `flake.nix`, etc.)
 
+## Phase 1.5: Learn the Codebase's Conventions
+
+Before launching agents, spend one short pass learning how *this* codebase does things, so agents can judge "does the PR fit here" rather than generic best-practice. Produce a **conventions brief** (a sentence or two per topic) and pass it verbatim to every agent alongside CLAUDE.md. Discover by grepping/reading — never guess:
+
+- **Validation library:** does the repo use a schema validator? `grep -rlE "from 'zod'|from \"zod\"" src` (or yup/valibot). If it does, hand-rolled `typeof`/manual type-guards on untrusted input in new code is a fit violation, not a style preference.
+- **Type derivation:** how are types built from their sources — Prisma `GetPayload`/`satisfies`, `Pick`/`Omit`/`extends`? A new inline type that re-spells an existing shape violates the pattern.
+- **Dominant naming:** sample existing identifiers in the touched area. Note abbreviation-vs-full-word and casing conventions so new names can be checked against them (e.g. is it `Municipality*` everywhere but `Muni*` in two new spots?).
+- **Shared primitives inventory:** list the existing shared components/hooks/helpers/formatters in and near the touched directories (`src/components/*`, `src/lib/utils`, `src/lib/formatters`, sibling files). **This inventory is load-bearing** — an agent cannot flag "reinvents `CityAvatar`" without knowing `CityAvatar` exists. Give the reuse agent this list explicitly.
+- **Component/state patterns:** how do sibling components fetch data, hold state, and structure effects?
+
+The brief is the difference between "looks fine" and "this doesn't match how the repo does X."
+
 ## Phase 2: Launch Specialized Review Agents
 
 Launch **all applicable agents in parallel** using a single message with multiple Agent tool calls. Each agent gets the full diff for its domain plus the project standards.
 
 Skip agents whose domain has no changed files (e.g., skip the schema agent if no schema files changed).
+
+**Evidence over conclusions (applies to every agent).** For any "is there an existing X?" / "does this follow the pattern?" check, the agent MUST show its work — the grep it ran, the sibling it compared against, and what it found — and only then conclude. A bare "no missed reuse" or "follows conventions" with no shown search is **not acceptable**: that exact hand-wave is how real issues slip through (an agent once reported "Missed Reuse: Clean" while an existing avatar component sat unreused). If an agent can't cite the search, it hasn't done the check — treat that section as unreviewed.
 
 ### Agent 1: Data Layer & Schema Review
 
@@ -218,6 +232,55 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 >
 > Be thorough but practical. Focus on tests that would actually catch bugs, not test count for its own sake.
 
+### Agent 5: Reuse & Codebase-Fit Review
+
+**When to include:** Always.
+
+**Prompt template for the agent:**
+
+> You are a reviewer for **reuse and codebase-fit**: does the PR use what already exists and follow how *this* repo does things, rather than reinventing or diverging? This is the check that most often produces a false "looks clean," so it is procedure-driven and evidence-required.
+>
+> **Conventions brief (from Phase 1.5):**
+> {conventions brief, including the shared-primitives inventory}
+>
+> **Project standards:**
+> {CLAUDE.md and CONTRIBUTING.md content}
+>
+> **Mandatory procedure — produce the evidence, do not skip or summarize:**
+> 1. **Enumerate every new exported symbol** the PR adds — components, hooks, helpers, types, constants. List them explicitly.
+> 2. **For each, search the codebase for a pre-existing equivalent** by name *and* by function — grep by likely names and by the concept (e.g. a new logo-with-fallback component → `grep -riE "avatar|logoImage" src/components`). **Paste the grep(s) and the candidates you found.** You may conclude "no existing equivalent" ONLY with the searches shown. An unsupported "clean" is a failed review.
+> 3. **Fit checks against the brief:**
+>    - Untrusted-input validation hand-rolled where the repo uses a schema library (Zod)?
+>    - A new inline type re-spelling an existing shape instead of `Pick`/`Omit`/derivation?
+>    - New names against the dominant naming convention (abbreviation vs full word, casing)?
+>    - A helper hand-rolled inline (viewport/geometry/date/formatting/etc.) that already exists?
+> 4. **Duplication within the PR:** the same block or type shape repeated across 2+ new files.
+>
+> **Output format:** Severity (Critical/Major/Minor/Nit) / File:line / Issue — **naming the existing thing it should use, with its path** / Suggestion. Reuse and fit findings are first-class even when they are "Minor" severity — they are the maintenance cost the codebase carries. Do not fabricate; but do not conclude "clean" without the searches above.
+
+### Agent 6: Simplicity & Patch-Smell Review
+
+**When to include:** Always.
+
+**Prompt template for the agent:**
+
+> You are a reviewer for **simplicity and design**: did the PR solve the problem *well*, or bolt complexity on / patch a symptom? "Robust and well-tested" is NOT the bar you enforce — a module can be robust, tested, and still over-built or modeled wrong. Your bar is "as simple as the problem allows, and modeled the right way for the framework."
+>
+> **Conventions brief (from Phase 1.5):**
+> {conventions brief}
+>
+> **Look for (and for each, give a concrete simpler alternative — argue the case, don't just assert):**
+> - **Over-engineering / YAGNI:** speculative generality, config/params for a single caller, guards for cases that cannot occur (e.g. a read that accepts values the write can never produce), asymmetries that carry an explanatory comment justifying a hypothetical future. Ask "what actually breaks if this were simpler?"
+> - **State written by effects that should be derived or event-driven:** `useEffect` + `setState` computing a value a `useMemo`/render expression could; state that mirrors a prop; the same piece of state written from several effects (or effects + imperative handlers) with precedence that depends on flush order.
+> - **Refs as escape hatches:** the "adjust state when a prop changes, via a previous-value ref" anti-pattern; refs used to dodge a dependency array where a `useCallback`/`useMemo` is the real fix. Distinguish the *justified* case — callbacks/values read inside long-lived listeners (Mapbox, subscriptions) that must not re-subscribe — and leave those alone.
+> - **`eslint-disable react-hooks/exhaustive-deps`:** for each occurrence, judge whether it hides a design that fights React or is a legitimate run-once / only-on-X.
+> - **Additive branching / god-objects:** a props or params object where many fields are dead for one caller; long if/else ladders bolted on over time; booleans that could collapse; the same value passed under two different names.
+> - **Comment hygiene:** comments restating what the code plainly says; the same rationale copy-pasted at every call site instead of stated once at its root (call sites should point to it, not repeat it).
+>
+> **How to review:** read the changed files fully and trace how state/data flows rather than reading lines in isolation — patch-smells show up in the *shape* of the flow, not a single line. Separate genuine smells from justified patterns (imperative glue at a framework boundary is often unavoidable; say so, and don't cry wolf on it).
+>
+> **Output format:** Severity / File:line / Issue (name the construct and *why* it reads as patched-together or over-built) / Suggestion (the simpler model). These are judgment findings — a reader who doesn't know the code should be able to follow your argument.
+
 ## Phase 3: Synthesize Findings
 
 After all agents complete, **you** (not another agent) must:
@@ -237,7 +300,9 @@ After all agents complete, **you** (not another agent) must:
    - A "Minor" from one agent might become "Major" when combined with a related finding
    - A "Major" might become "Minor" if another agent found a mitigating factor
 
-6. **Organize into the final report**
+6. **Keep maintainability findings first-class.** Reuse, codebase-fit, simplicity, naming, and comment findings are usually low *severity* (they rarely crash anything) but high *value* — they are exactly what an experienced maintainer catches and a correctness-only pass misses. Don't bury them as "nits"; give them their own section (below). Also **confirm the reuse/fit agent actually showed its searches** — if it concluded "clean" without pasting greps, treat that as unreviewed and verify it yourself.
+
+7. **Organize into the final report**
 
 ## Final Report Format
 
@@ -258,6 +323,10 @@ Issues that should be fixed before merge — correctness, missing validation, lo
 Issues worth fixing but not blocking — code quality, minor inconsistencies, hardcoded strings.
 [For each: file:line, description]
 
+### Maintainability & Fit
+Reuse misses (reinvents existing code — name it), convention divergences (validation / type-derivation / naming), over-engineering and patch-smells (state-via-effects, escape-hatch refs, god-object props, YAGNI), and comment/naming hygiene. Low severity, high value — the experienced-maintainer layer a correctness-only pass misses.
+[For each: file:line, what it reinvents / diverges from / over-builds, and the simpler or shared alternative]
+
 ### Test Coverage Gaps
 [List of untested code with testability assessment]
 
@@ -272,6 +341,8 @@ End with a **recommendation**: what to fix first and why.
 
 - Each agent reads the actual code, not just the diff — this catches issues where changed code interacts with existing code
 - Agents read CLAUDE.md and CONTRIBUTING.md to enforce project-specific rules, not just generic best practices
+- **Phase 1.5 (convention discovery) is what makes "does this fit?" answerable** — without the shared-primitives inventory and the validation/type/naming conventions, agents fall back to generic best-practice and miss codebase-specific divergences
+- **"Evidence over conclusions" is the load-bearing rule.** The reuse and fit checks already existed as agent instructions before this — and agents hand-waved them ("no missed reuse" while an existing component sat unreused). Requiring the shown grep is what closes that gap; adding more lenses without it just produces more confident hand-waving
 - The synthesis step is critical — it's where cross-cutting concerns and compound issues are caught
 - This skill does NOT run builds, linters, or tests — use `/pre-pr` for that
 - This skill does NOT comment on PRs or take any public action — it reports findings to you in the terminal
