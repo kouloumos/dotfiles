@@ -1,6 +1,6 @@
 ---
 description: "Deep PR review using parallel specialized agents. Use before merging to catch real issues."
-argument-hint: "[base-branch]"
+argument-hint: "[pr-number | base-branch]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Agent"]
 ---
 
@@ -8,7 +8,51 @@ allowed-tools: ["Bash", "Glob", "Grep", "Read", "Agent"]
 
 Run a thorough pull request review using parallel domain-specialized agents, each bringing deep expertise to a different aspect of the code. This is not a linter — it catches the issues that only an experienced reviewer would find.
 
-**Base branch:** $ARGUMENTS (default: auto-detect from `main` or `master`)
+**Argument:** $ARGUMENTS — a **PR number** (e.g. `218`), a **base branch** (e.g. `develop`), or empty. Phase 0 resolves which. When it resolves to a GitHub PR, the review is grounded in that PR's history (description, linked issues, prior reviews) so it doesn't re-litigate settled points. Default base branch: auto-detect from `main` or `master`.
+
+## Phase 0: Resolve Target & Fetch PR/Issue Context
+
+**Runs first whenever the review targets a GitHub PR.** This is what keeps the review from re-litigating points already raised, missing the acceptance criteria the diff is supposed to satisfy, and presenting a months-old open blocker as a fresh discovery. If the review is a local-branch-only review with no associated PR, skip this phase and note in the final report that the review is **diff-only** (no history to reconcile against).
+
+### 0a. Interpret the argument and resolve the PR
+
+**The normal case: you run this from inside the review worktree with the PR branch already checked out**, so local `HEAD` *is* the PR tip and Phases 1–2 review `HEAD` unchanged. Phase 0's job is then only to **identify which PR `HEAD` belongs to** and fetch its context — no re-checkout, no new worktree.
+
+`$ARGUMENTS` may be a PR number, a base branch, or empty:
+- **Empty** (most common) → resolve the PR for the current branch: `gh pr view --json number,baseRefName,url,reviewDecision`. Set `BASE = upstream/<baseRefName>` (or the existing auto-detected base). Fetch its context (0b). If no PR is associated, degrade to **diff-only**.
+- **Non-numeric** → a **base branch** override (existing behavior). Still run `gh pr view --json number 2>/dev/null` for the current branch and fetch context if a PR exists.
+- **All digits** (e.g. `218`) → a **PR number**. If it matches the PR already checked out at `HEAD`, treat as the empty case. **Only if `HEAD` is not that PR** (running off-workflow from an unrelated branch) fall back to fetching the PR into a throwaway worktree so the diff is correct:
+  ```bash
+  gh pr view <PR#> --json headRefName,baseRefName,headRefOid,state,url,reviewDecision
+  git fetch upstream pull/<PR#>/head && git fetch upstream <baseRefName>
+  git worktree add /tmp/review-pr-<PR#> --detach FETCH_HEAD   # review here; BASE = upstream/<baseRefName>
+  ```
+  Clean the worktree up at the end. This branch is the exception, not the default — don't create a worktree when `HEAD` is already the PR tip.
+
+### 0b. Fetch the history — then distill, don't dump
+
+```bash
+gh pr view <PR#> --json title,body,author,labels,closingIssuesReferences,reviewDecision
+gh pr view <PR#> --json reviews --jq '.reviews[] | "[\(.submittedAt)] \(.author.login) (\(.state)): \(.body)"'
+gh api repos/<owner>/<repo>/pulls/<PR#>/comments --paginate \
+  --jq '.[] | "[\(.created_at)] \(.user.login) @ \(.path):\(.line // .original_line)\n\(.body)"'   # inline line-level
+gh api repos/<owner>/<repo>/issues/<PR#>/comments --paginate \
+  --jq '.[] | "[\(.created_at)] \(.user.login): \(.body)"'                                          # conversation
+gh pr checks <PR#> 2>/dev/null || true                                                              # CI state
+```
+For each **linked issue** in `closingIssuesReferences` (and any `Closes #N` / `Fixes #N` in the body), fetch it:
+```bash
+gh issue view <n> --json title,body
+```
+Watch for **bot summaries** in the PR body and reviews (Greptile, Cursor, CodeRabbit): they often carry a confidence score and a cited blocker on the *current* head — that is a standing finding, not to be re-discovered.
+
+### 0c. Produce three artifacts — passed verbatim to every agent (like the conventions brief)
+
+1. **Acceptance criteria** — what the PR must actually do, distilled from the PR description **and** the linked issues. Agents check the diff *against* this, not just for generic defects. A stated goal the diff silently fails to meet, or an explicit maintainer note (e.g. *"automated tests were intentionally skipped"*), is a **first-class finding**.
+2. **Resolved ledger** — points raised in prior human/bot review that the author has **since addressed**. Agents must **NOT** re-raise these. Spot-check a sample against the current diff — a reviewer may have asked for X and the author only did it partially (that partial gap *is* still a finding).
+3. **Standing ledger** — points raised in prior review that are **still unaddressed** on the current head: unresolved maintainer comments and live bot blockers (with the reviewer + file cited). The review should **confirm and surface these as standing** (attributed to who first raised them), not dress them up as new discoveries.
+
+Also note the **reviewers already involved** (human vs bots) and the PR's `reviewDecision` — this calibrates tone and how much is worth repeating. The three ledgers flow into Phase 2 (agents avoid resolved items, hunt against acceptance criteria) and Phase 3 (each finding is reconciled against them).
 
 ## Phase 1: Gather Context
 
@@ -58,6 +102,8 @@ The brief is the difference between "looks fine" and "this doesn't match how the
 ## Phase 2: Launch Specialized Review Agents
 
 Launch **all applicable agents in parallel** using a single message with multiple Agent tool calls. Each agent gets the full diff for its domain plus the project standards.
+
+**Pass the Phase 0 artifacts to every agent** (when the review targets a PR): the **acceptance criteria** (so agents also check the diff *satisfies the PR's stated goals and linked issues*, not just that it's defect-free) and the **resolved ledger** with the instruction: *"These points were already raised and addressed in prior review — do not re-raise them; if you believe one was only partially addressed, say so explicitly and show the gap."* Do **not** feed agents the standing ledger as their own findings — that stays with you for reconciliation in Phase 3, so agents rediscover independently (a genuine independent hit corroborates the standing item; silence doesn't erase it).
 
 Skip agents whose domain has no changed files (e.g., skip the schema agent if no schema files changed).
 
@@ -302,18 +348,31 @@ After all agents complete, **you** (not another agent) must:
 
 6. **Keep maintainability findings first-class.** Reuse, codebase-fit, simplicity, naming, and comment findings are usually low *severity* (they rarely crash anything) but high *value* — they are exactly what an experienced maintainer catches and a correctness-only pass misses. Don't bury them as "nits"; give them their own section (below). Also **confirm the reuse/fit agent actually showed its searches** — if it concluded "clean" without pasting greps, treat that as unreviewed and verify it yourself.
 
-7. **Organize into the final report**
+7. **Reconcile against the Phase 0 ledgers** (skip if diff-only). This is what makes the review worth a maintainer's time on a PR with history — tag every finding:
+   - **NEW** — not raised before. The review's real contribution; lead with these.
+   - **STILL-OPEN** — matches a standing-ledger item or an independent agent hit on a live bot blocker. Keep it, but attribute it (*"first raised by @X on <date>"* / *"Greptile's current blocker"*) and present it as confirmation, not discovery.
+   - **ALREADY-ADDRESSED** — matches the resolved ledger and the current diff confirms it's fixed. **Drop it** (or, if only partially fixed, keep *only* the residual gap and say so). Do not spend the reader's attention re-closing settled points.
+
+   Then **check acceptance-criteria coverage**: for each stated goal (PR description + linked issues), does the diff actually deliver it? An unmet or partially-met criterion, or a flagged maintainer caveat (e.g. tests deliberately skipped), is a finding in its own right.
+
+8. **Organize into the final report**
 
 ## Final Report Format
 
 Present the synthesized review to the user:
 
+When the review targets a PR, open with a one-line context header (`reviewDecision`, who has already reviewed, current bot confidence if any) and an **Acceptance criteria** check, then the severity sections. Tag each finding **[NEW]**, **[STILL-OPEN → @who]**, so the reader instantly sees what's genuinely new versus a confirmed standing item. Put confirmed-but-old items in the **Standing items** section, not mixed into the fresh findings. Omit the PR header and these two sections for a diff-only review.
+
 ```
 ## PR Review: [branch-name] ([N] commits, [M] files changed)
+[PR #N — reviewDecision · already reviewed by @a, @bot (conf X/5) · closes #issue]   ← PR reviews only
+
+### Acceptance criteria (PR reviews only)
+[Each stated goal from PR body + linked issues → met / partially-met (gap) / unmet. Flag maintainer caveats.]
 
 ### Critical ([count])
 Issues that will cause bugs, data loss, or security problems.
-[For each: file:line, description, concrete fix suggestion]
+[For each: [NEW]/[STILL-OPEN → @who], file:line, description, concrete fix suggestion]
 
 ### Major ([count])
 Issues that should be fixed before merge — correctness, missing validation, logic problems.
@@ -333,9 +392,12 @@ Reuse misses (reinvents existing code — name it), convention divergences (vali
 ### Nits ([count])
 Style and naming suggestions. Take or leave.
 [Brief list]
+
+### Standing items from prior review (PR reviews only)
+Points raised earlier that are still unaddressed on the current head — confirmed, attributed, not re-discovered. [For each: who raised it + when, file:line, one-line status.] Omit if none.
 ```
 
-End with a **recommendation**: what to fix first and why.
+End with a **recommendation**: what to fix first and why — leading with NEW findings and unmet acceptance criteria, and separating "worth a fresh round" from "these standing items still need the author's attention."
 
 ## Notes
 
@@ -343,6 +405,7 @@ End with a **recommendation**: what to fix first and why.
 - Agents read CLAUDE.md and CONTRIBUTING.md to enforce project-specific rules, not just generic best practices
 - **Phase 1.5 (convention discovery) is what makes "does this fit?" answerable** — without the shared-primitives inventory and the validation/type/naming conventions, agents fall back to generic best-practice and miss codebase-specific divergences
 - **"Evidence over conclusions" is the load-bearing rule.** The reuse and fit checks already existed as agent instructions before this — and agents hand-waved them ("no missed reuse" while an existing component sat unreused). Requiring the shown grep is what closes that gap; adding more lenses without it just produces more confident hand-waving
+- **Phase 0 (PR/issue context) is what makes a review of a PR-with-history worth reading** — without it the review re-litigates points the maintainer already resolved, misses acceptance criteria the diff silently fails, and can't tell a fresh find from a months-old standing blocker. The three ledgers (acceptance criteria / resolved / standing) turn a raw defect list into "here's what's actually new, here's what's still open, here's what you can ignore."
 - The synthesis step is critical — it's where cross-cutting concerns and compound issues are caught
 - This skill does NOT run builds, linters, or tests — use `/pre-pr` for that
 - This skill does NOT comment on PRs or take any public action — it reports findings to you in the terminal
