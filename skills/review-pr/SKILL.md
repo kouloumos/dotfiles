@@ -1,7 +1,7 @@
 ---
-description: "Deep PR review using parallel specialized agents. Use before merging to catch real issues."
+description: "Deep PR review using parallel specialized agents, with optional runtime/visual verification and evidence-backed review posting. Use before merging to catch real issues."
 argument-hint: "[pr-number | base-branch]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "Agent"]
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Edit", "Write", "Agent"]
 ---
 
 # Deep PR Review
@@ -399,6 +399,54 @@ Points raised earlier that are still unaddressed on the current head — confirm
 
 End with a **recommendation**: what to fix first and why — leading with NEW findings and unmet acceptance criteria, and separating "worth a fresh round" from "these standing items still need the author's attention."
 
+## Phase 4: Manual Verification Plan
+
+The analysis above finds defects in the code; this phase determines what to **exercise in a running system** that CI and static review can't cover. Produce a concrete, specific plan — not "test it manually."
+
+1. **Derive the testable surface** from the diff:
+   - UI changes → need a browser.
+   - New/changed API behavior → describe the request and the expected response/effect.
+   - Data transformations → expected input → output, including the edge cases the diff handles (null, empty, each enum variant).
+2. **Map every entry point.** When the change touches a **shared** component / util / hook, grep for *all* its call sites and split them into **fix-target** (where the change is aimed) and **regression** (other consumers the change could break). A single path is not coverage — enumerate them so the plan is provably complete. The PR author typically only checks the one surface they were focused on; this is where the review adds coverage.
+3. **"What's missing?"** Given the stated goal, are there related files that should have changed but didn't — call sites not updated, the symmetric path not handled (error handling added to `createX` but not `deleteX`)? List them.
+4. **Isolate new inputs.** When a check is meant to prove a new input has an effect, design an A/B pair where the outcome is reachable **only** through that input — if the same result is derivable another way, the check proves nothing.
+5. **Offer to seed test data.** If exercising the change needs specific records or states, offer to set them up. **Discover the project's conventions from its own docs** (`CLAUDE.md`, `CONTRIBUTING.md`, project skills): how to run the app, how to authenticate as the required role, how to seed, and **which environment is safe to write to**. Never write to a production database; confirm the target first. Don't ask the user what to create — read the diff + schema and derive it.
+
+Present the plan: what needs human/browser eyes, the mapped entry points, and the seed offer. This is the "what to verify" artifact Phase 5 executes.
+
+## Phase 5: Runtime & Visual Verification (optional — on request)
+
+Only when the user opts in (UI and behavioral changes benefit most). Execute the Phase 4 plan against a running app using the **browser-scripting** skill.
+
+1. **Discover run/auth conventions** from the project's docs — never hardcode project specifics. How to start the app, authenticate as the needed role, and the safe environment. If undocumented, ask.
+2. **Drive it.** For a visual fix, capture **before/after**: screenshot the current behavior, then the changed behavior (toggle the changed files against the base commit on one running server, or use a second checkout). For a coverage matrix, exercise each **mapped entry point** and capture it.
+3. **Check the viewports that matter.** UI diverges across breakpoints — don't verify one size. Default set (`newContext({ viewport })`): **mobile 390×844**, **tablet 768×1024**, **desktop 1440×900**. Scope by relevance: capture the full set when the change touches responsive styles or mobile-vs-desktop components; a single-context surface needs only its own; a pure API/data/logic change needs none. Best practice: check **around the project's own breakpoints** — derive them from its config (e.g. Tailwind `theme.screens`) and grab a just-below / just-above pair, since the layout switches at the boundary.
+4. **Screenshots / recordings** via `playwright-run` (`page.screenshot`, or `recordVideo` for a clip). `Read` the PNGs to confirm what rendered.
+5. **Report honestly.** State what you verified vs. inferred, **and at which viewports**. A path or size you couldn't reach (deep flow, gated feature) is **inference, not verified** — say so; never let an untested path read as covered.
+
+## Phase 6: Disposition & Posting (optional — public action, gated)
+
+Only when the user wants to act on the review (fix things, or post a comment/review). Everything here is behind the **confirm-before-public-action** gate.
+
+### Fix-forward split (team PRs)
+On a team-member PR, don't default every finding to a comment — shipping an obviously-correct fix beats describing it and waiting a round-trip. Classify each finding:
+- **Fix-forward** — one obviously-correct change (clear bug, missing error handling, dead code, typo). Implement it.
+- **Comment-only** — tradeoffs, design questions, or any fix embedding an assumption you couldn't verify. When in doubt, comment.
+
+**External-contributor PRs are always comment-only** — commenting teaches, and pushing to their branch takes over their work; offer mechanical fixes as GitHub ` ```suggestion ` blocks instead. Present the split for approval before implementing. For approved fix-forwards: one commit per concern (independently revertable), run the project's checks, **confirm before pushing**, and reference each commit in the review with a `git revert` escape-hatch.
+
+### Draft the review
+- **Main comment + inline comments** are complementary — don't repeat. The main comment carries themes and points that don't belong on a line; inline comments carry the actionable specifics (file:line, what to use instead).
+- **Voice:** match the reviewer's established voice and the project's norms — concise, conversational, code-referencing, actionable, honest (credit good work too). No emoji, no "Great work" openers, no walls of headers/bullets. Include only points that actually came up.
+- **Adversarial pass (mandatory, before showing the draft):** challenge every claim as if refuting it. *Verified or inferred?* — state inferences as such and turn unverifiable ones into questions. *Self-explanatory* to someone without the investigation context (plain cause-and-effect, not compressed jargon)? *No incident-time specifics* ("last night 02:08" → "a failed staging run"). *Does each comment earn its place?* — rare-path/non-blocking notes fold into the main comment or drop. *Already stated by the author?* — shrink to a one-line independent confirmation.
+
+### Attach evidence (optional)
+To embed Phase 5 screenshots/recordings in the review, upload them to GitHub and put the URLs in the body — see `browser-scripting`'s `references/github-image-upload.md` (GitHub's CDN has no API; it's a scrape-then-`gh api` flow).
+
+### Preview, then post
+- **Preview in chat first — always.** Show the full body + every inline comment with its anchor, and iterate. Prior approval of an earlier draft does not carry to new content.
+- **Post via the API**, not the GitHub UI (the UI's "Finish your review" panel wipes an API-staged body). Write the payload to a JSON file and POST with `gh api --input` (multi-paragraph bodies with backticks don't survive shell quoting; build the JSON with `python3` if `jq` is absent). **Body-only** reviews: on approval, post directly with `event` set. Reviews **with inline comments**: stage PENDING (omit `event`) so the user reads them in the diff UI, then submit the verdict via `.../pulls/<N>/reviews/<id>/events` (`APPROVE` / `COMMENT` / `REQUEST_CHANGES`). Anchors must land inside diff hunks. Never submit before the user has seen the exact text and named the verdict.
+
 ## Notes
 
 - Each agent reads the actual code, not just the diff — this catches issues where changed code interacts with existing code
@@ -407,5 +455,6 @@ End with a **recommendation**: what to fix first and why — leading with NEW fi
 - **"Evidence over conclusions" is the load-bearing rule.** The reuse and fit checks already existed as agent instructions before this — and agents hand-waved them ("no missed reuse" while an existing component sat unreused). Requiring the shown grep is what closes that gap; adding more lenses without it just produces more confident hand-waving
 - **Phase 0 (PR/issue context) is what makes a review of a PR-with-history worth reading** — without it the review re-litigates points the maintainer already resolved, misses acceptance criteria the diff silently fails, and can't tell a fresh find from a months-old standing blocker. The three ledgers (acceptance criteria / resolved / standing) turn a raw defect list into "here's what's actually new, here's what's still open, here's what you can ignore."
 - The synthesis step is critical — it's where cross-cutting concerns and compound issues are caught
-- This skill does NOT run builds, linters, or tests — use `/pre-pr` for that
-- This skill does NOT comment on PRs or take any public action — it reports findings to you in the terminal
+- This skill does NOT run builds, linters, or tests — use `/pre-pr` for that. (Phase 5 *runs the app* for behavioral verification, which is a different thing.)
+- **The analysis half (Phases 0–3) takes no public action on its own.** Runtime verification (Phase 5) and posting a review (Phase 6) are **optional and gated** — they run only when the user opts in, and Phase 6 never posts before the user has seen the exact text and named the verdict.
+- Phases 4–6 are **project-agnostic**: they discover how to run, authenticate, seed, and post from the *project's own* `CLAUDE.md` / docs, so the skill stays portable across repos. If a project doesn't document these, ask rather than hardcoding.
