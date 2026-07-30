@@ -132,6 +132,35 @@ large screenshots/photos and skip the flood of tiny icons/thumbnails.
 - Say this out loud to the requester up front. "We imaged it, most of X is
   erased, here's what survives" beats implying everything comes back.
 
+## Follow-up: cleanup & return the drive to service (destructive — gate carefully)
+
+Only after recovery is finished. **The image is your fallback; every step here is a one-way door.**
+
+**Preconditions — do NOT start until all are true:**
+- Recovered files were *validated by opening/viewing*, not just header-checked.
+- Recovered data exists in **≥2 independent places** (e.g. local disk + off-machine backup). One copy is not a backup. **The recovery-destination drive counts as only one copy** — copying back onto the reformatted stick does NOT by itself satisfy this.
+- You've decided you don't need the source drive preserved as-is (evidence / second attempt later).
+
+**Order — each step gated on the previous:**
+1. Consolidate recovered files into a permanent, named folder + write a short report (recovered / lost / why).
+2. Get a second copy off-machine (or confirm the machine itself is backed up). **Copy, never move.**
+3. Reformat the source drive **only after verifying its identity** — never a bare node:
+   ```bash
+   lsblk -o NAME,SIZE,TRAN,HOTPLUG,MODEL,SERIAL /dev/sdX   # confirm removable + usb + expected serial+size
+   sudo wipefs -a /dev/sdX
+   sudo parted -s /dev/sdX mklabel msdos mkpart primary ntfs 1MiB 100%
+   sudo mkfs.exfat -L LABEL /dev/sdX1                       # nix-shell -p parted exfatprogs util-linux
+   ```
+4. (Optional) copy the recovered folder back onto the reformatted drive — **copy**, so the local copy survives; then verify by checksum.
+5. Cleanup, in two tiers — **don't collapse them under space pressure:**
+   - **5a. Disposable working files — safe to delete anytime** to reclaim space: carve output, PhotoRec dir, mapfiles, one-off scripts. These free most of the space; do this first if the disk is full.
+   - **5b. The image (`img.raw`) — delete LAST**, gated on steps 1–2 being confirmed. Being low on disk is *not* a reason to delete it early; delete 5a instead.
+
+**Never:**
+- Delete the image before recovered data is validated **and** backed up.
+- Reformat/wipe by device node without confirming serial + removable first — you can destroy the system disk.
+- "Move" recovered data onto the just-failed drive as its only copy.
+
 ## Quick reference
 
 | Situation | Move |
@@ -143,6 +172,7 @@ large screenshots/photos and skip the flood of tiny icons/thumbnails.
 | Filenames present but data is garbage/0xFF | Stale metadata → `carve.py carve` (content only) |
 | Need only photos/screenshots | `carve.py carve … png jpeg` → `dims` → view large ones |
 | No exFAT signature | `wipefs img.raw` / PhotoRec, then carve |
+| Recovery finished, want to reuse the drive | Follow-up section — validate + back up (≥2 copies) BEFORE deleting the image; verify serial before reformat |
 
 ## Common mistakes
 
