@@ -52,9 +52,9 @@ Watch for **bot summaries** in the PR body and reviews (Greptile, Cursor, CodeRa
 2. **Resolved ledger** — points raised in prior human/bot review that the author has **since addressed**. Agents must **NOT** re-raise these. Spot-check a sample against the current diff — a reviewer may have asked for X and the author only did it partially (that partial gap *is* still a finding).
 3. **Standing ledger** — points raised in prior review that are **still unaddressed** on the current head: unresolved maintainer comments and live bot blockers (with the reviewer + file cited). The review should **confirm and surface these as standing** (attributed to who first raised them), not dress them up as new discoveries.
 
-Also note the **reviewers already involved** (human vs bots) and the PR's `reviewDecision` — this calibrates tone and how much is worth repeating. The three ledgers flow into Phase 2 (agents avoid resolved items, hunt against acceptance criteria) and Phase 3 (each finding is reconciled against them).
+Also note the **reviewers already involved** (human vs bots) and the PR's `reviewDecision` — this calibrates tone and how much is worth repeating. The three ledgers flow into Phase 2 (agents avoid resolved items, hunt against acceptance criteria) and Phase 4 (each finding is reconciled against them).
 
-## Phase 1: Gather Context
+## Phase 1: Scope, Standards & Conventions
 
 Before launching agents, collect the information they all need.
 
@@ -87,9 +87,9 @@ Before launching agents, collect the information they all need.
    - Test files (`__tests__/`, `*.test.*`, `*.spec.*`)
    - Config files (`package.json`, `tsconfig.json`, `flake.nix`, etc.)
 
-## Phase 1.5: Learn the Codebase's Conventions
+### Learn the codebase's conventions
 
-Before launching agents, spend one short pass learning how *this* codebase does things, so agents can judge "does the PR fit here" rather than generic best-practice. Produce a **conventions brief** (a sentence or two per topic) and pass it verbatim to every agent alongside CLAUDE.md. Discover by grepping/reading — never guess:
+Then spend one short pass learning how *this* codebase does things, so agents can judge "does the PR fit here" rather than generic best-practice. Produce a **conventions brief** (a sentence or two per topic) and pass it verbatim to every agent alongside CLAUDE.md. Discover by grepping/reading — never guess:
 
 - **Validation library:** does the repo use a schema validator? `grep -rlE "from 'zod'|from \"zod\"" src` (or yup/valibot). If it does, hand-rolled `typeof`/manual type-guards on untrusted input in new code is a fit violation, not a style preference.
 - **Type derivation:** how are types built from their sources — Prisma `GetPayload`/`satisfies`, `Pick`/`Omit`/`extends`? A new inline type that re-spells an existing shape violates the pattern.
@@ -103,11 +103,28 @@ The brief is the difference between "looks fine" and "this doesn't match how the
 
 Launch **all applicable agents in parallel** using a single message with multiple Agent tool calls. Each agent gets the full diff for its domain plus the project standards.
 
-**Pass the Phase 0 artifacts to every agent** (when the review targets a PR): the **acceptance criteria** (so agents also check the diff *satisfies the PR's stated goals and linked issues*, not just that it's defect-free) and the **resolved ledger** with the instruction: *"These points were already raised and addressed in prior review — do not re-raise them; if you believe one was only partially addressed, say so explicitly and show the gap."* Do **not** feed agents the standing ledger as their own findings — that stays with you for reconciliation in Phase 3, so agents rediscover independently (a genuine independent hit corroborates the standing item; silence doesn't erase it).
+**Pass the Phase 0 artifacts to every agent** (when the review targets a PR): the **acceptance criteria** (so agents also check the diff *satisfies the PR's stated goals and linked issues*, not just that it's defect-free) and the **resolved ledger** with the instruction: *"These points were already raised and addressed in prior review — do not re-raise them; if you believe one was only partially addressed, say so explicitly and show the gap."* Do **not** feed agents the standing ledger as their own findings — that stays with you for reconciliation in Phase 4, so agents rediscover independently (a genuine independent hit corroborates the standing item; silence doesn't erase it).
 
-Skip agents whose domain has no changed files (e.g., skip the schema agent if no schema files changed).
+Skip **Track A** agents whose domain has no changed files (e.g. skip the schema agent if no schema files changed). **Track B is not skippable on that basis** — its domain isn't a file type, it's the delta itself, so "no files in my area" never applies. Drop it only for documentation, config, or a refactor that touches no conditional at all.
 
-**Evidence over conclusions (applies to every agent).** For any "is there an existing X?" / "does this follow the pattern?" check, the agent MUST show its work — the grep it ran, the sibling it compared against, and what it found — and only then conclude. A bare "no missed reuse" or "follows conventions" with no shown search is **not acceptable**: that exact hand-wave is how real issues slip through (an agent once reported "Missed Reuse: Clean" while an existing avatar component sat unreused). If an agent can't cite the search, it hasn't done the check — treat that section as unreviewed.
+**Match the evidence to the claim (applies to every agent, and to you).** A claim is discharged only by the right *kind* of evidence, and each kind is cheap to state:
+
+| Claim | What discharges it |
+|---|---|
+| "X already exists" / "this follows the pattern" | the search you ran, and what it returned |
+| "X is broken" | concrete inputs → the wrong output |
+| **"X changed"** | **the before and the after, observed** (`git show {BASE}:path`, or two running builds) |
+| **"X is severe"** | **a measurement** — fraction of the surface, pixels, ms, rows |
+
+A bare "no missed reuse" or "follows conventions" with no shown search is **not acceptable** — that exact hand-wave is how real issues slip through (an agent once reported "Missed Reuse: Clean" while an existing avatar component sat unreused). If an agent can't cite the search, it hasn't done the check: treat that section as unreviewed.
+
+The bottom two rows are the ones that get skipped. **Evidence of reading is not evidence of behaviour.** An agent can quote the exact line that removed a feature and file it as a style nit, because "this line is untidy" and "this line turned something off for users" are different claims needing different evidence.
+
+Agents run in **two tracks**, launched together. **Track A** asks whether the code is good. **Track B** asks what the running product does differently. Both are needed: a PR is not a body of code that arrived, it is a transition from state A to state B, and Track A only ever sees state B.
+
+---
+
+## Track A — code quality
 
 ### Agent 1: Data Layer & Schema Review
 
@@ -286,7 +303,7 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 
 > You are a reviewer for **reuse and codebase-fit**: does the PR use what already exists and follow how *this* repo does things, rather than reinventing or diverging? This is the check that most often produces a false "looks clean," so it is procedure-driven and evidence-required.
 >
-> **Conventions brief (from Phase 1.5):**
+> **Conventions brief (from Phase 1):**
 > {conventions brief, including the shared-primitives inventory}
 >
 > **Project standards:**
@@ -312,7 +329,7 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 
 > You are a reviewer for **simplicity and design**: did the PR solve the problem *well*, or bolt complexity on / patch a symptom? "Robust and well-tested" is NOT the bar you enforce — a module can be robust, tested, and still over-built or modeled wrong. Your bar is "as simple as the problem allows, and modeled the right way for the framework."
 >
-> **Conventions brief (from Phase 1.5):**
+> **Conventions brief (from Phase 1):**
 > {conventions brief}
 >
 > **Look for (and for each, give a concrete simpler alternative — argue the case, don't just assert):**
@@ -327,9 +344,99 @@ Skip agents whose domain has no changed files (e.g., skip the schema agent if no
 >
 > **Output format:** Severity / File:line / Issue (name the construct and *why* it reads as patched-together or over-built) / Suggestion (the simpler model). These are judgment findings — a reader who doesn't know the code should be able to follow your argument.
 
-## Phase 3: Synthesize Findings
+---
 
-After all agents complete, **you** (not another agent) must:
+## Track B — behaviour delta
+
+### Agent 7: Behaviour-Delta Review
+
+**When to include:** any diff that changes rendering, fetching, routing, enabling, or thresholds — in practice, almost all application code. Skip only for pure documentation, config, or a refactor that touches no conditional.
+
+**Prompt template for the agent:**
+
+> You are the **behaviour-delta reviewer**. Every other agent asks whether the code is good. You ask exactly one question: **what does the running product do differently after this change, and was each difference intended?**
+>
+> A PR is a transition from state A (the base) to state B (this branch). Three questions follow, and the other agents only cover the first:
+> 1. What does B do that A didn't? — new capability.
+> 2. **What did A do that B doesn't?** — removed behaviour.
+> 3. **What do both do, differently?** — changed behaviour.
+>
+> Questions 2 and 3 are yours, and they are where silent regressions live: the author tested the feature they were building, not the flows that already ran through the code they changed.
+>
+> **Project standards and conventions brief:** {CLAUDE.md, CONTRIBUTING.md, conventions brief}
+> **Acceptance criteria:** {Phase 0 artifact — this is how you judge "intended"}
+>
+> **Mechanically findable change sites — start here, they are greppable:**
+> - A boolean gating render or execution that **gained or lost a term**. `active: X` → `active: X && !Y` means "in state Y, this no longer happens". Search the diff for added `&&`/`||` on anything named `active|enabled|disabled|visible|show*|is*|has*|can*|should*`.
+> - **Dependency arrays that lost an entry** — that removes a re-run, and whatever used to happen on that re-run stops happening.
+> - Added early returns and guard clauses.
+> - Changed defaults, thresholds, constants, enum/union members.
+> - `if`/`switch` conditions whose shape changed.
+> - Props removed from, or renamed on, an existing component.
+>
+> **For each site, produce a row:**
+>
+> | state | before (base) | after (this branch) | intended? |
+>
+> Write before/after in **user-visible terms, not code terms**. "On the municipalities tab, subject pins used to render past zoom 9; now they never render" — *not* "the active prop gained a term". If you cannot say what a user would see, say so: that row becomes a runtime check rather than a finding.
+>
+> **Judging "intended":** check the PR description, commit messages, and linked issues. A described change is intended. **A change that is a side effect of a described change is the most valuable finding you can produce** — the author swapped a layer deliberately and did not notice that an existing action depended on it. Say which of the two you're looking at.
+>
+> **Method:** for every site you flag, read the **base** version of the file (`git show {BASE}:path`), not just the diff. The diff shows the line that changed; only the base file shows what that line used to permit.
+>
+> **Output:** the table, plus — for every row answered "no" or "unclear" — the exact user steps that would reveal the difference, written so someone else can execute them without reading the code. That list is the runtime test matrix for Phase 3.
+
+## Phase 3: Runtime Verification
+
+**Default ON** when both hold: the change touches user-visible behaviour, *and* the app can be run (a PR preview, a staging deploy, or a local dev server). Skip only when neither holds — and when you skip, **say so in the report, with the reason**. An unrun review is a weaker review, and the reader is entitled to know which one they're getting.
+
+Drive it with the **browser-scripting** skill. `references/runtime-probes.md` carries the probe patterns and the gotchas that silently invalidate results.
+
+First, **discover run/auth conventions from the project's own docs** (`CLAUDE.md`, `CONTRIBUTING.md`, project skills): how to start the app, how to authenticate as the role the change needs, and which environment is safe to write to. Never write to a production database. If it isn't documented, ask.
+
+This phase does two jobs, in this order: the first **discovers** what no agent proposed, the second **confirms and sizes** what they did.
+
+### 3a. Baseline A/B — do this first
+
+**Single-sided testing only finds the bugs you thought to look for. Diffing two deployments finds the ones nobody thought about.**
+
+If the base is deployed anywhere (production, staging, a `main` preview), write **one** script that drives the *same steps* against both it and the PR build, dumping a structured inventory of observable state at each step — rendered elements grouped by kind, visible text, open dialogs, URL, network calls — and diff the two inventories.
+
+Choose the steps from **existing user flows that pass through changed code**, not from the new feature. The new feature has no baseline to differ from; the existing flows do, and that is exactly where a silent regression hides. Include one step you expect to be identical, as a control on your own classifier.
+
+Any difference the PR description doesn't account for is a finding.
+
+If the base isn't deployed, approximate: run it locally on a second port, or check the base out in a second worktree.
+
+### 3b. Execute the behaviour matrix
+
+Track B produced a table of states where behaviour may differ, each with the user steps that would show it. Drive them. Every row resolves to **confirmed**, **not reproduced**, or **could not reach** — and "could not reach" goes into the report as exactly that, never as silence.
+
+### 3c. Measure, don't estimate
+
+Before any finding keeps a Major or Critical rating, get a **number**: what fraction of the surface is affected, how many pixels, how many milliseconds, how many rows. Severity assigned from reading code is a guess, and guesses run high. A defect can be entirely real and still be a nit.
+
+### 3d. Map every entry point
+
+When the change touches a **shared** component / util / hook, grep for *all* its call sites and split them into **fix-target** (where the change is aimed) and **regression** (other consumers it could break). Exercise each. A single path is not coverage — the author typically checked the one surface they were focused on, and this is where the review adds coverage.
+
+Also ask **"what's missing?"** — files that should have changed and didn't: call sites not updated, the symmetric path not handled (error handling added to `createX` but not `deleteX`).
+
+### 3e. Check the viewports that matter
+
+UI diverges across breakpoints. Default set (`newContext({ viewport })`): **mobile 390×844**, **tablet 768×1024**, **desktop 1440×900**. Scope by relevance — a pure API/data change needs none. Derive the project's *own* breakpoints from its config (e.g. Tailwind `theme.screens`) and take a just-below / just-above pair, since the layout switches at the boundary. **Read the project's media queries rather than assuming**: a width you'd call "tablet" may resolve to the mobile layout.
+
+### 3f. Capture artifacts as you go
+
+Screenshot or record **every finding that reproduces, at the moment it reproduces** — never plan to reproduce it later for the picture. The artifacts are for the PR author: a console table proves it to you, an image proves it to them. Prefer an A/B pair with a working control when the defect is an asymmetry, annotate geometric defects before capturing, and record video for interaction defects a still can't show. Check the artifact actually shows the defect before you use it.
+
+### 3g. Report honestly
+
+State what you **verified** versus what you **inferred**, and at which viewports. A path you couldn't reach is inference — say so, and never let an untested path read as covered.
+
+## Phase 4: Synthesize Findings
+
+After all agents complete and the runtime results are in, **you** (not another agent) must:
 
 1. **Read all agent findings carefully**
 
@@ -345,6 +452,8 @@ After all agents complete, **you** (not another agent) must:
 5. **Re-assess severity** based on the full picture:
    - A "Minor" from one agent might become "Major" when combined with a related finding
    - A "Major" might become "Minor" if another agent found a mitigating factor
+   - **Nothing keeps a rating above Minor on code-reading alone.** Either it carries a measurement from Phase 3, or it is tagged *unmeasured* in the report so the reader can discount it. Agents rate from the shape of the code and consistently rate high; measurement is what separates a real defect from a real *and serious* one.
+   - **A regression outranks a defect of the same size.** "This used to work and now doesn't" is a different claim from "this could be better", and the reader needs to see which they're getting.
 
 6. **Keep maintainability findings first-class.** Reuse, codebase-fit, simplicity, naming, and comment findings are usually low *severity* (they rarely crash anything) but high *value* — they are exactly what an experienced maintainer catches and a correctness-only pass misses. Don't bury them as "nits"; give them their own section (below). Also **confirm the reuse/fit agent actually showed its searches** — if it concluded "clean" without pasting greps, treat that as unreviewed and verify it yourself.
 
@@ -357,11 +466,13 @@ After all agents complete, **you** (not another agent) must:
 
 8. **Organize into the final report**
 
-## Final Report Format
+## Phase 5: Report
 
 Present the synthesized review to the user:
 
 When the review targets a PR, open with a one-line context header (`reviewDecision`, who has already reviewed, current bot confidence if any) and an **Acceptance criteria** check, then the severity sections. Tag each finding **[NEW]**, **[STILL-OPEN → @who]**, so the reader instantly sees what's genuinely new versus a confirmed standing item. Put confirmed-but-old items in the **Standing items** section, not mixed into the fresh findings. Omit the PR header and these two sections for a diff-only review.
+
+Additionally tag **[REGRESSION]** on anything that worked before this branch and doesn't now, and **[unmeasured]** on anything rated above Minor without a Phase 3 measurement behind it. A reader triaging a long review needs to see, at a glance, which items are "this got worse" and which are "I think this is bad but didn't check."
 
 ```
 ## PR Review: [branch-name] ([N] commits, [M] files changed)
@@ -399,31 +510,6 @@ Points raised earlier that are still unaddressed on the current head — confirm
 
 End with a **recommendation**: what to fix first and why — leading with NEW findings and unmet acceptance criteria, and separating "worth a fresh round" from "these standing items still need the author's attention."
 
-## Phase 4: Manual Verification Plan
-
-The analysis above finds defects in the code; this phase determines what to **exercise in a running system** that CI and static review can't cover. Produce a concrete, specific plan — not "test it manually."
-
-1. **Derive the testable surface** from the diff:
-   - UI changes → need a browser.
-   - New/changed API behavior → describe the request and the expected response/effect.
-   - Data transformations → expected input → output, including the edge cases the diff handles (null, empty, each enum variant).
-2. **Map every entry point.** When the change touches a **shared** component / util / hook, grep for *all* its call sites and split them into **fix-target** (where the change is aimed) and **regression** (other consumers the change could break). A single path is not coverage — enumerate them so the plan is provably complete. The PR author typically only checks the one surface they were focused on; this is where the review adds coverage.
-3. **"What's missing?"** Given the stated goal, are there related files that should have changed but didn't — call sites not updated, the symmetric path not handled (error handling added to `createX` but not `deleteX`)? List them.
-4. **Isolate new inputs.** When a check is meant to prove a new input has an effect, design an A/B pair where the outcome is reachable **only** through that input — if the same result is derivable another way, the check proves nothing.
-5. **Offer to seed test data.** If exercising the change needs specific records or states, offer to set them up. **Discover the project's conventions from its own docs** (`CLAUDE.md`, `CONTRIBUTING.md`, project skills): how to run the app, how to authenticate as the required role, how to seed, and **which environment is safe to write to**. Never write to a production database; confirm the target first. Don't ask the user what to create — read the diff + schema and derive it.
-
-Present the plan: what needs human/browser eyes, the mapped entry points, and the seed offer. This is the "what to verify" artifact Phase 5 executes.
-
-## Phase 5: Runtime & Visual Verification (optional — on request)
-
-Only when the user opts in (UI and behavioral changes benefit most). Execute the Phase 4 plan against a running app using the **browser-scripting** skill.
-
-1. **Discover run/auth conventions** from the project's docs — never hardcode project specifics. How to start the app, authenticate as the needed role, and the safe environment. If undocumented, ask.
-2. **Drive it.** For a visual fix, capture **before/after**: screenshot the current behavior, then the changed behavior (toggle the changed files against the base commit on one running server, or use a second checkout). For a coverage matrix, exercise each **mapped entry point** and capture it.
-3. **Check the viewports that matter.** UI diverges across breakpoints — don't verify one size. Default set (`newContext({ viewport })`): **mobile 390×844**, **tablet 768×1024**, **desktop 1440×900**. Scope by relevance: capture the full set when the change touches responsive styles or mobile-vs-desktop components; a single-context surface needs only its own; a pure API/data/logic change needs none. Best practice: check **around the project's own breakpoints** — derive them from its config (e.g. Tailwind `theme.screens`) and grab a just-below / just-above pair, since the layout switches at the boundary.
-4. **Screenshots / recordings** via `playwright-run` (`page.screenshot`, or `recordVideo` for a clip). `Read` the PNGs to confirm what rendered.
-5. **Report honestly.** State what you verified vs. inferred, **and at which viewports**. A path or size you couldn't reach (deep flow, gated feature) is **inference, not verified** — say so; never let an untested path read as covered.
-
 ## Phase 6: Disposition & Posting (optional — public action, gated)
 
 Only when the user wants to act on the review (fix things, or post a comment/review). Everything here is behind the **confirm-before-public-action** gate.
@@ -440,21 +526,24 @@ On a team-member PR, don't default every finding to a comment — shipping an ob
 - **Voice:** match the reviewer's established voice and the project's norms — concise, conversational, code-referencing, actionable, honest (credit good work too). No emoji, no "Great work" openers, no walls of headers/bullets. Include only points that actually came up.
 - **Adversarial pass (mandatory, before showing the draft):** challenge every claim as if refuting it. *Verified or inferred?* — state inferences as such and turn unverifiable ones into questions. *Self-explanatory* to someone without the investigation context (plain cause-and-effect, not compressed jargon)? *No incident-time specifics* ("last night 02:08" → "a failed staging run"). *Does each comment earn its place?* — rare-path/non-blocking notes fold into the main comment or drop. *Already stated by the author?* — shrink to a one-line independent confirmation.
 
-### Attach evidence (optional)
-To embed Phase 5 screenshots/recordings in the review, upload them to GitHub and put the URLs in the body — see `browser-scripting`'s `references/github-image-upload.md` (GitHub's CDN has no API; it's a scrape-then-`gh api` flow).
+### Attach evidence
+The Phase 3 artifacts are half the deliverable — a console table proves a finding to you, an image proves it to the author. Embed them: upload to GitHub, put the URLs in the body. See `references/posting.md`.
 
 ### Preview, then post
 - **Preview in chat first — always.** Show the full body + every inline comment with its anchor, and iterate. Prior approval of an earlier draft does not carry to new content.
-- **Post via the API**, not the GitHub UI (the UI's "Finish your review" panel wipes an API-staged body). Write the payload to a JSON file and POST with `gh api --input` (multi-paragraph bodies with backticks don't survive shell quoting; build the JSON with `python3` if `jq` is absent). **Body-only** reviews: on approval, post directly with `event` set. Reviews **with inline comments**: stage PENDING (omit `event`) so the user reads them in the diff UI, then submit the verdict via `.../pulls/<N>/reviews/<id>/events` (`APPROVE` / `COMMENT` / `REQUEST_CHANGES`). Anchors must land inside diff hunks. Never submit before the user has seen the exact text and named the verdict.
+- **Stage as PENDING** (visible only to the user) so they can read it in the diff UI in context, then submit the verdict only once they have seen the exact text and named it.
+- **Post through the API, never the GitHub web UI** — the UI's "Finish your review" panel silently overwrites an API-staged body and every image in it.
+- The mechanics — payload shape, anchor rules, staging and iterating, dismissing your own stale blocker — are in **`references/posting.md`**. Read it before staging.
 
 ## Notes
 
 - Each agent reads the actual code, not just the diff — this catches issues where changed code interacts with existing code
 - Agents read CLAUDE.md and CONTRIBUTING.md to enforce project-specific rules, not just generic best practices
-- **Phase 1.5 (convention discovery) is what makes "does this fit?" answerable** — without the shared-primitives inventory and the validation/type/naming conventions, agents fall back to generic best-practice and miss codebase-specific divergences
-- **"Evidence over conclusions" is the load-bearing rule.** The reuse and fit checks already existed as agent instructions before this — and agents hand-waved them ("no missed reuse" while an existing component sat unreused). Requiring the shown grep is what closes that gap; adding more lenses without it just produces more confident hand-waving
+- **Convention discovery (Phase 1) is what makes "does this fit?" answerable** — without the shared-primitives inventory and the validation/type/naming conventions, agents fall back to generic best-practice and miss codebase-specific divergences
+- **"Match the evidence to the claim" is the load-bearing rule.** The reuse and fit checks existed as agent instructions long before agents actually did them — they hand-waved ("no missed reuse" while an existing component sat unreused) until the shown grep was required. The same failure recurred one level up: an agent *quoted the exact line* that disabled a feature for users and filed it as a style nit, because nothing required it to state a behaviour claim in behaviour terms. Adding more lenses never fixes this; requiring the matching evidence does.
+- **Track B exists because Track A structurally cannot see removals.** Agents organized by code artifact (data, logic, components, tests) or code virtue (reuse, simplicity) all inspect the code that is *there*. "This used to happen and no longer does" is invisible to every one of them — it has no file to live in. That is why it needs its own agent and its own evidence type, not a checklist item inside an existing one.
 - **Phase 0 (PR/issue context) is what makes a review of a PR-with-history worth reading** — without it the review re-litigates points the maintainer already resolved, misses acceptance criteria the diff silently fails, and can't tell a fresh find from a months-old standing blocker. The three ledgers (acceptance criteria / resolved / standing) turn a raw defect list into "here's what's actually new, here's what's still open, here's what you can ignore."
-- The synthesis step is critical — it's where cross-cutting concerns and compound issues are caught
-- This skill does NOT run builds, linters, or tests — use `/pre-pr` for that. (Phase 5 *runs the app* for behavioral verification, which is a different thing.)
-- **The analysis half (Phases 0–3) takes no public action on its own.** Runtime verification (Phase 5) and posting a review (Phase 6) are **optional and gated** — they run only when the user opts in, and Phase 6 never posts before the user has seen the exact text and named the verdict.
-- Phases 4–6 are **project-agnostic**: they discover how to run, authenticate, seed, and post from the *project's own* `CLAUDE.md` / docs, so the skill stays portable across repos. If a project doesn't document these, ask rather than hardcoding.
+- **Runtime verification runs before synthesis on purpose.** Ranking findings before observing them produces confident, wrong severities — measurement routinely turns a "Major" into a nit, and the baseline A/B routinely surfaces something no agent proposed. A report written from code-reading alone is a list of hypotheses presented as findings.
+- This skill does NOT run builds, linters, or tests — use `/pre-pr` for that. (Phase 3 *runs the app* for behavioural verification, which is a different thing.)
+- **Phases 0–5 take no public action.** Only Phase 6 does, and it never posts before the user has seen the exact text and named the verdict.
+- Phases 3 and 6 are **project-agnostic**: they discover how to run, authenticate, seed, and post from the *project's own* `CLAUDE.md` / docs, so the skill stays portable across repos. If a project doesn't document these, ask rather than hardcoding.
