@@ -227,11 +227,12 @@
      (vscode-with-extensions.override {
       vscodeExtensions = with vscode-extensions; [
         jnoortheen.nix-ide
+        eamodio.gitlens # inline blame, file/line history, rich diff & compare views
+        mhutchie.git-graph # visual commit graph
       ];
      })
      discord
      rustdesk
-     unstable.code-cursor
      v4l-utils # for virtual camera support
      zoom-us
      gh
@@ -244,7 +245,7 @@
       })
    ];
 
-  # Enable nix-ld to run dynamically linked executables (e.g., cursor-agent, VS Code extensions)
+  # Enable nix-ld to run dynamically linked executables (e.g., VS Code extensions)
   # that expect standard Linux library locations
   programs.nix-ld = {
     enable = true;
