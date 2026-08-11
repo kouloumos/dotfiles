@@ -128,6 +128,8 @@ The bottom two rows are the ones that get skipped. **Evidence of reading is not 
 
 **Describe the symptom, not the unit.** When briefing an agent on something you have half-spotted, give it the symptom and make it establish the scope itself — "the PR adds fields to several response mappers; establish how many exist and what they share" — not "these three fields appear at four sites, should there be a helper?". An agent handed a unit investigates that unit and reports on that unit. Naming the boundary is how you get a correct answer to the wrong question.
 
+**Keep each command short, even though the checkout is runnable.** An agent parked in one long command — a full build, the whole suite, an install — can be killed for inactivity and return *nothing*. When you tell agents what they may execute (Phase 1, step 5), scope it: a targeted test file rather than the suite, `tsc --noEmit` rather than the build, and abandon anything running past a couple of minutes rather than waiting it out. Whatever genuinely needs the long command is yours in Phase 3, or `/pre-pr`'s.
+
 Agents run in **two tracks**, launched together. **Track A** asks whether the code is good. **Track B** asks what the running product does differently. Both are needed: a PR is not a body of code that arrived, it is a transition from state A to state B, and Track A only ever sees state B.
 
 ---
@@ -411,6 +413,8 @@ First, **discover run/auth conventions from the project's own docs** (`CLAUDE.md
 
 Then **actually obtain the credential, before you run anything.** Discovering that a dev-login route or a seed script exists is not the same as having a session, and the gap between them is where Phase 3 quietly degrades into a half-review. When a change is auth- or role-gated, the gated side is the side the author exercised least and the side no anonymous probe can reach — so it is exactly where your marginal value is highest, and exactly what gets left as inference when the credential looks like a ten-minute detour. Budget the ten minutes. If you genuinely cannot get one, that is a "could not reach" row in 3b and a stated limit in 3h, never a silent omission.
 
+**Write the code and data the reproduction needs — that is the job, not a detour.** Seed the records the repro requires rather than hunting for a case that happens to exist; inject instrumentation into the running page (see *Instrumenting the page* in `references/runtime-probes.md`). The difference between "I think this is a bug" and a measurement is almost always a piece of throwaway probe code. Production stays off-limits; dev and local databases are yours. On a **shared** staging or preview database, prefer probes that can't persist — pick the code path that doesn't write (a no-op save branch, cancel instead of confirm) — and say in the report that the probe was non-destructive.
+
 This phase does two jobs, in this order: the first **discovers** what no agent proposed, the second **confirms and sizes** what they did.
 
 ### 3a. Baseline A/B — do this first
@@ -423,11 +427,15 @@ Choose the steps from **existing user flows that pass through changed code**, no
 
 Any difference the PR description doesn't account for is a finding.
 
-If the base isn't deployed, approximate: run it locally on a second port, or check the base out in a second worktree.
+**The two sides must be comparable in the ways the probe depends on**, and a deployed baseline often isn't. Environments differ in what they permit: a staging deploy may refuse the dev-login route that previews allow, so the gated surface you need is unreachable on that side even though the page loads. Check that the baseline can reach the same state — authenticate, same data, same feature flags — before trusting a diff against it, and fall back to running the base locally on a second port or in a second worktree when it can't.
 
 ### 3b. Execute the behaviour matrix
 
 Track B produced a table of states where behaviour may differ, each with the user steps that would show it. Drive them. Every row resolves to **confirmed**, **not reproduced**, or **could not reach** — and "could not reach" goes into the report as exactly that, never as silence.
+
+**Before believing a "not reproduced", prove the probe actually reached the condition.** A probe that never triggers the mechanism returns "identical on both builds" — which reads exactly like "no regression" and is the most dangerous result this phase can produce, because it retires a true hypothesis with apparent evidence. So assert the **precondition** as its own observable, not just the outcome: if the finding depends on a re-render, assert that state actually changed; if it depends on a request, assert it fired; if it depends on scroll, assert the position moved. Print that assertion next to the result. When a negative depends on a precondition you did not verify, it is "could not reach", not "not reproduced".
+
+This is a different control from the classifier control in 3a: that one guards against your *measurement* being wrong, this one guards against your *setup* being inert.
 
 ### 3c. Measure, don't estimate
 
@@ -447,6 +455,10 @@ UI diverges across breakpoints. Default set (`newContext({ viewport })`): **mobi
 
 Screenshot or record **every finding that reproduces, at the moment it reproduces** — never plan to reproduce it later for the picture. The artifacts are for the PR author: a console table proves it to you, an image proves it to them. Prefer an A/B pair with a working control when the defect is an asymmetry, annotate geometric defects before capturing, and record video for interaction defects a still can't show. Check the artifact actually shows the defect before you use it.
 
+**Make the artifact self-evident.** A raw screenshot of a complex app proves nothing to someone who wasn't driving it — they can't see which element you meant, what the state was, or which step they're looking at. Build the explanation into the page *before* capturing: highlight the element under test, show the live state the claim is about, caption the current step. Then a still carries its own argument and a video narrates itself.
+
+**Put them where the reader can open them, and link them.** Write artifacts to a stable directory outside any session scratchpad — `~/<pr-or-topic>-evidence/` — and in the report **link every one as a clickable `file:///absolute/path`**, with a one-line statement of what it shows. Artifacts that exist but are never surfaced did not happen: the reader's ability to check your work themselves is most of their value, and these are the same files that get uploaded in Phase 6.
+
 ### 3g. Prove the tests you recommend
 
 A recommended test is a finding like any other, and "this test would catch the regression" is a claim needing its matching evidence. If Agent 4 could not run the suite, you do it here: write the test, watch it pass, then introduce each bug it claims to catch and watch it fail. Report the mutation table alongside it.
@@ -456,6 +468,8 @@ Expect this to change the test, not merely bless it — an assertion can be enti
 ### 3h. Report honestly
 
 State what you **verified** versus what you **inferred**, and at which viewports. A path you couldn't reach is inference — say so, and never let an untested path read as covered. Name the sides you exercised: "verified anonymous, inferred authenticated" is an honest and useful sentence; silence about the second half is not.
+
+**Report the hypotheses measurement killed, not just the ones it confirmed.** A predicted defect that the A/B shows to be identical on both builds is a real result and belongs in the report — it tells the author which scary-looking part of their diff is actually inert, and it is the clearest evidence that the review's severities came from observation rather than from reading. Say what you expected, what you measured, and that you dropped it.
 
 ## Phase 4: Synthesize Findings
 
@@ -571,6 +585,8 @@ The Phase 3 artifacts are half the deliverable — a console table proves a find
 - **Track B exists because Track A structurally cannot see removals.** Agents organized by code artifact (data, logic, components, tests) or code virtue (reuse, simplicity) all inspect the code that is *there*. "This used to happen and no longer does" is invisible to every one of them — it has no file to live in. That is why it needs its own agent and its own evidence type, not a checklist item inside an existing one.
 - **Phase 0 (PR/issue context) is what makes a review of a PR-with-history worth reading** — without it the review re-litigates points the maintainer already resolved, misses acceptance criteria the diff silently fails, and can't tell a fresh find from a months-old standing blocker. The three ledgers (acceptance criteria / resolved / standing) turn a raw defect list into "here's what's actually new, here's what's still open, here's what you can ignore."
 - **Runtime verification runs before synthesis on purpose.** Ranking findings before observing them produces confident, wrong severities — measurement routinely turns a "Major" into a nit, and the baseline A/B routinely surfaces something no agent proposed. A report written from code-reading alone is a list of hypotheses presented as findings.
+- **3b's precondition rule comes from a near-miss.** A predicted focus regression measured identical on both builds — because the button being clicked wrote back the same value, so nothing re-rendered and the mechanism under test never ran. The probe was inert, the reading was clean, and the finding was real and nearly dropped. A confirmed defect announces itself; this failure mode is silent, which is why it needs a rule rather than attention.
+- **Artifacts are the deliverable, not a by-product.** A number in a transcript is something the reader has to take on trust; an image is something they can check. That is why 3f's requirements are all-or-nothing — a capture that happened but explains nothing, or explains itself but was never linked, leaves the reader exactly where a bare assertion would have.
 - **Don't build locally — the build you want is already deployed.** A production build is minutes of CPU for something CI runs on every push, and its output *is* the PR preview that Phase 3 drives, so running it yourself buys nothing the preview hasn't already given you. Getting CI green is the author's job, not the review's. Cheap checks are the opposite case: a type-check or a unit run is seconds, and running those **as evidence for a finding** — confirming a claimed breakage, mutation-testing a recommended test (3g) — is the point, not a detour. The rule is about cost and redundancy; read as "never execute anything" it produces reviews that recommend tests nobody has run.
 - **Phases 0–5 take no public action.** Only Phase 6 does, and it never posts before the user has seen the exact text and named the verdict.
 - Phases 3 and 6 are **project-agnostic**: they discover how to run, authenticate, seed, and post from the *project's own* `CLAUDE.md` / docs, so the skill stays portable across repos. If a project doesn't document these, ask rather than hardcoding.

@@ -78,13 +78,57 @@ Run it several times with different magnitudes — a property can hold for one i
 
 When a finding is "path X is broken", find a path Y with the same user intent that works, and capture both. An asymmetry is far harder to dismiss than a claim, and it localises the fix. Build the comparison as one artifact with both panels labelled.
 
+## Instrumenting the page
+
+Techniques for turning a hypothesis into a number, and for making the resulting artifact explain itself.
+
+**Count calls the app makes.** Patch the method in `addInitScript`, before app code runs, and read the counter after a scripted interaction. This turns "I think it re-focuses on every render" into a number:
+
+```js
+await page.addInitScript(() => {
+  window.__focusCalls = 0;
+  const orig = HTMLTextAreaElement.prototype.focus;
+  HTMLTextAreaElement.prototype.focus = function (...a) { window.__focusCalls++; return orig.apply(this, a); };
+});
+// ... drive 10 keystrokes ...
+await page.evaluate(() => window.__focusCalls);   // base: 10, PR: 0
+```
+
+Same trick for `scrollIntoView`, `fetch`, `history.pushState`. Reset the counter to 0 immediately before the step you're measuring so setup noise doesn't land in it.
+
+**An on-page HUD makes the video narrate itself.** A fixed overlay polling the state the claim is about — `document.activeElement`, open-dialog count, a computed value — plus a caption you drive from the script per step. Colour it by expected/unexpected so a viewer needs no explanation:
+
+```js
+bar.style.cssText = 'position:fixed;z-index:2147483647;top:0;left:0;right:0;' +
+  'padding:10px 14px;background:#111;color:#fff;pointer-events:none';
+```
+
+**`pointer-events:none` is mandatory** — a full-width overlay silently swallows clicks on the header underneath, and Playwright reports it as `<div> intercepts pointer events` on an unrelated locator.
+
+**Highlight the element under test with a stylesheet rule, not an inline style.** Keyed to a stable attribute, it survives the framework unmounting and remounting the node — which is exactly what happens in the swap you're usually measuring:
+
+```js
+await page.addStyleTag({ content:
+  `[data-utterance-id="${id}"]{outline:4px solid #f0f !important;background:#ff0 !important}` });
+```
+
+Without this, a still of a dense app cannot show *which* element moved.
+
+The same counters serve the precondition assertion §3b requires: read back the observable that proves the mechanism fired, and print it beside the result.
+
 ## Artifacts
 
 Capture at the moment of reproduction — never plan to reproduce it later for the screenshot.
 
 - Annotate geometric defects before capturing: draw element boxes, mark affected points, then clip tight at `deviceScaleFactor: 2`–`3`.
 - Use `recordVideo` on the context for interaction and animation defects a still can't show. Convert to `.mp4` (`ffmpeg -c:v libx264 -pix_fmt yuv420p -movflags +faststart`) — GitHub renders mp4/mov as a player.
-- Compose A/B pairs into a single labelled image: `setContent` with both screenshots as base64 `<img>` and a caption bar each, then screenshot that page.
+- Compose A/B pairs into a single labelled image: `setContent` with both screenshots as base64 `<img>` and a caption bar each, then screenshot that page. With no ImageMagick around, ffmpeg does it in one call — and the colour-coded banners do a lot of the explaining:
+  ```bash
+  ffmpeg -y -i base.png -i pr.png -filter_complex \
+   "[0:v]scale=1100:-1,pad=iw:ih+70:0:70:color=0x8B0000,drawtext=text='BASE — <what happened>':fontcolor=white:fontsize=34:x=20:y=18[a];\
+    [1:v]scale=1100:-1,pad=iw:ih+70:0:70:color=0x14532d,drawtext=text='PR — <what happened>':fontcolor=white:fontsize=34:x=20:y=18[b];\
+    [a][b]hstack=inputs=2" AB.png
+  ```
 - **Check the artifact actually shows the defect.** A camera that flew elsewhere, a popup anchored off-screen, or a collapsed panel can produce a technically-correct screenshot that demonstrates nothing. If the evidence isn't visible in the frame, adjust the state (zoom out, scroll) until it is.
 
 ## General gotchas
