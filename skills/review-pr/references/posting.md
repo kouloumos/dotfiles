@@ -19,10 +19,19 @@ POST /repos/{owner}/{repo}/pulls/{n}/reviews
 
 **Omitting `event` is what makes it PENDING.** Include `event` only when submitting directly.
 
-Guard against the two silent failures:
+Guard against the three silent failures:
 
 - An empty or malformed `--input` file creates an empty PENDING review. Assert the payload before POSTing — that `event` is absent, that the body is non-empty, that the comment count is what you expect.
-- Anchors must land inside a diff hunk **including its context lines**. Check with the default-context diff, not `-U0`; a line that only appears in `-U0` output will be accepted but a line outside the hunk entirely will be rejected or silently degraded to a file-level comment. Verify after staging: each comment should report `subject_type: "line"` and a non-null `position`.
+- **Anchors must land inside a diff hunk, including its context lines.** A line outside every hunk is rejected or silently degraded to a file-level comment — it still shows up, just detached from the code, which is the entire value of an inline comment. Check *forwards*, before POSTing, with `references/check-anchors.py`:
+
+  ```
+  check-anchors.py <owner>/<repo> <pr> --expect <head-sha> path/a.ts:310 path/b.ts:71:RIGHT
+  ```
+
+  It resolves each `(path, line, side)` against the PR's patch and names the ones that won't stick, so you fix them instead of restaging. Anything it calls UNUSABLE belongs in the review body.
+- **The head moves under you.** A staged review's anchors are specific to the commit you read; if the author pushes while you draft, your line numbers shift and nothing tells you — GitHub will happily attach comments to whatever those numbers now mean. Pass `--expect <sha>` (the same value as the payload's `commit_id`) and the check aborts on drift.
+
+Do **not** verify by reading anchors back afterwards. A PENDING review reports `line: null`, `side: null` and `subject_type: null` — only `position` is populated, and those fields stay null until submission. Reverse-mapping `position` to a line means walking the patch (the `@@` header is position 0, the line below it is position 1, and every context/`+`/`-` line counts), which is easy to get off by one. `check-anchors.py --pos <path> <n>` does it if you must; checking forwards is the better habit.
 
 ## Submitting a verdict
 
