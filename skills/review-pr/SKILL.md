@@ -87,6 +87,10 @@ Before launching agents, collect the information they all need.
    - Test files (`__tests__/`, `*.test.*`, `*.spec.*`)
    - Config files (`package.json`, `tsconfig.json`, `flake.nix`, etc.)
 
+5. **Make the checkout runnable.** Check whether the project's dependencies actually resolve (`node_modules` present *and* containing the packages the diff imports — a stale tree is worse than an absent one, because it fails late). If they don't, install them now. This is a two-minute step that decides how much of the review is code-reading and how much is evidence: with a runnable checkout, agents can run the type-checker and the suite, and Phase 3 can mutation-test a proposed test. Tell every agent explicitly what it *can* execute — an agent told "you cannot run tests" will not try.
+
+6. **Read the third-party behaviour the diff leans on.** If the PR's correctness depends on how a library or framework behaves — lifecycle and instantiation, caching, ordering, how many times something is invoked, what a wrapper passes its callback — find that behaviour in the package's own source and read it. `npm pack <pkg>@<range> && tar xzf` gets you the published dist when the package isn't installed. Note what you confirmed; it goes to the agents as fact, and it is the one class of assumption they cannot check for themselves.
+
 ### Learn the codebase's conventions
 
 Then spend one short pass learning how *this* codebase does things, so agents can judge "does the PR fit here" rather than generic best-practice. Produce a **conventions brief** (a sentence or two per topic) and pass it verbatim to every agent alongside CLAUDE.md. Discover by grepping/reading — never guess:
@@ -115,6 +119,8 @@ Skip **Track A** agents whose domain has no changed files (e.g. skip the schema 
 | "X is broken" | concrete inputs → the wrong output |
 | **"X changed"** | **the before and the after, observed** (`git show {BASE}:path`, or two running builds) |
 | **"X is severe"** | **a measurement** — fraction of the surface, pixels, ms, rows |
+| **"the library/framework does X"** | **that package's source, read** — not its docs, and never a comment in the diff asserting it |
+| **"this test catches Y"** | **Y introduced, and the test observed failing** |
 
 A bare "no missed reuse" or "follows conventions" with no shown search is **not acceptable** — that exact hand-wave is how real issues slip through (an agent once reported "Missed Reuse: Clean" while an existing avatar component sat unreused). If an agent can't cite the search, it hasn't done the check: treat that section as unreviewed.
 
@@ -277,6 +283,11 @@ Agents run in **two tracks**, launched together. **Track A** asks whether the co
 > 2. For each new/changed logic file, search for corresponding test files
 > 3. Read test files fully — assess whether assertions actually verify the behavior described in test names
 > 4. For untested code, identify which functions are pure (extractable and testable) vs which need integration tests
+> 5. **Check what actually blocks a test before calling something untestable.** Type-only imports erase at compile time, so a module that "depends on the SDK" may need none of it at runtime; a transitive import of the ORM is usually one `jest.mock` away. Follow the import chain and name the real obstacle, or say there isn't one — "needs an integration test" is a claim, and it is wrong more often than it is right.
+>
+> **If the suite is runnable, mutation-test every test you propose.** Write it, run it (it must pass), then introduce each bug you claim it catches — one at a time — and confirm it fails. Report a table: mutation → result. This is not ceremony: it routinely changes the test's *design*, because it exposes assertions that are structurally blind to the regression they were written for. A proposed test with no mutation table is a sketch, and should be labelled one.
+>
+> Prefer assertions on the **difference** between two states over a full inventory snapshot, when the property under test is a difference (e.g. "the authenticated tool list minus the anonymous one is exactly this set"). Inventory assertions force an edit every time something unrelated is added, so they get deleted; difference assertions survive.
 >
 > **Output format:**
 > Return findings in two sections:
@@ -398,6 +409,8 @@ Drive it with the **browser-scripting** skill. `references/runtime-probes.md` ca
 
 First, **discover run/auth conventions from the project's own docs** (`CLAUDE.md`, `CONTRIBUTING.md`, project skills): how to start the app, how to authenticate as the role the change needs, and which environment is safe to write to. Never write to a production database. If it isn't documented, ask.
 
+Then **actually obtain the credential, before you run anything.** Discovering that a dev-login route or a seed script exists is not the same as having a session, and the gap between them is where Phase 3 quietly degrades into a half-review. When a change is auth- or role-gated, the gated side is the side the author exercised least and the side no anonymous probe can reach — so it is exactly where your marginal value is highest, and exactly what gets left as inference when the credential looks like a ten-minute detour. Budget the ten minutes. If you genuinely cannot get one, that is a "could not reach" row in 3b and a stated limit in 3h, never a silent omission.
+
 This phase does two jobs, in this order: the first **discovers** what no agent proposed, the second **confirms and sizes** what they did.
 
 ### 3a. Baseline A/B — do this first
@@ -434,9 +447,15 @@ UI diverges across breakpoints. Default set (`newContext({ viewport })`): **mobi
 
 Screenshot or record **every finding that reproduces, at the moment it reproduces** — never plan to reproduce it later for the picture. The artifacts are for the PR author: a console table proves it to you, an image proves it to them. Prefer an A/B pair with a working control when the defect is an asymmetry, annotate geometric defects before capturing, and record video for interaction defects a still can't show. Check the artifact actually shows the defect before you use it.
 
-### 3g. Report honestly
+### 3g. Prove the tests you recommend
 
-State what you **verified** versus what you **inferred**, and at which viewports. A path you couldn't reach is inference — say so, and never let an untested path read as covered.
+A recommended test is a finding like any other, and "this test would catch the regression" is a claim needing its matching evidence. If Agent 4 could not run the suite, you do it here: write the test, watch it pass, then introduce each bug it claims to catch and watch it fail. Report the mutation table alongside it.
+
+Expect this to change the test, not merely bless it — an assertion can be entirely correct and still structurally blind to the exact mistake it was written to prevent, and only the mutation reveals which. Recommending an unmutated test is how a review hands the author busywork with a confident face.
+
+### 3h. Report honestly
+
+State what you **verified** versus what you **inferred**, and at which viewports. A path you couldn't reach is inference — say so, and never let an untested path read as covered. Name the sides you exercised: "verified anonymous, inferred authenticated" is an honest and useful sentence; silence about the second half is not.
 
 ## Phase 4: Synthesize Findings
 
@@ -451,7 +470,9 @@ After all agents complete and the runtime results are in, **you** (not another a
    - A missing validation + a missing test = higher risk
    - A logic bug + duplicated logic = the bug exists in two places
 
-4. **Verify Major and Critical findings:** For any finding rated Major or Critical, read the relevant code yourself before including it in the report. Agent findings are hypotheses, not facts — agents may misunderstand framework behavior, miss context from files they didn't read, or make wrong assumptions. If you can't confirm the issue by reading the code, downgrade or drop it.
+4. **Verify Major and Critical findings:** For any finding rated Major or Critical, read the relevant code yourself before including it in the report. Agent findings are hypotheses, not facts — agents may misunderstand framework behavior, miss context from files they didn't read, or make wrong assumptions. If you can't confirm the issue by reading the code, downgrade or drop it. The same applies to any test an agent proposes: unmutated, it is a sketch (3g), and an agent's account of *why* a test is hard to write is itself a hypothesis worth ten seconds of checking.
+
+   **A dead agent's domain is unreviewed.** Agents stall, hit watchdogs, and die. When one does, its silence is indistinguishable from a clean report at synthesis time — the exact failure this skill spends its evidence rules preventing. Re-run it, or cover its domain yourself and say in the report which you did.
 
 5. **Re-assess severity** based on the full picture:
    - A "Minor" from one agent might become "Major" when combined with a related finding
@@ -546,9 +567,10 @@ The Phase 3 artifacts are half the deliverable — a console table proves a find
 - **Convention discovery (Phase 1) is what makes "does this fit?" answerable** — without the shared-primitives inventory and the validation/type/naming conventions, agents fall back to generic best-practice and miss codebase-specific divergences
 - **"Match the evidence to the claim" is the load-bearing rule.** The reuse and fit checks existed as agent instructions long before agents actually did them — they hand-waved ("no missed reuse" while an existing component sat unreused) until the shown grep was required. The same failure recurred one level up: an agent *quoted the exact line* that disabled a feature for users and filed it as a style nit, because nothing required it to state a behaviour claim in behaviour terms. Adding more lenses never fixes this; requiring the matching evidence does.
 - **Duplication rules must point at pre-existing code, not just at the diff.** Every duplication check here once read "repeated across 2+ new files", which only fires when a single PR introduces both copies. The ordinary case is a PR adding the Nth copy of a shape that already exists N−1 times: the diff contains one instance and looks clean by construction. A related failure is scope-priming — an agent told "these three fields repeat at four sites" correctly proposed a three-field helper, while the actual duplicated unit was the entire response record, repeated across three tools and already drifted in field nullability, date format, and envelope placement.
+- **The assumption a PR rests on is usually in someone else's source.** A review once turned on whether a handler factory ran per request or once per process — the difference between per-caller behaviour and a cross-request identity leak. A comment in the diff asserted the safe answer; two review bots passed the PR clean; no agent could check it, because the package wasn't in `node_modules`. Two `npm pack`s and a read of the dist settled it. Agents reason about the code in front of them and take library behaviour on trust, so this check has no natural owner but you — and it is exactly the class of assumption that makes a PR either fine or badly broken, with no middle.
 - **Track B exists because Track A structurally cannot see removals.** Agents organized by code artifact (data, logic, components, tests) or code virtue (reuse, simplicity) all inspect the code that is *there*. "This used to happen and no longer does" is invisible to every one of them — it has no file to live in. That is why it needs its own agent and its own evidence type, not a checklist item inside an existing one.
 - **Phase 0 (PR/issue context) is what makes a review of a PR-with-history worth reading** — without it the review re-litigates points the maintainer already resolved, misses acceptance criteria the diff silently fails, and can't tell a fresh find from a months-old standing blocker. The three ledgers (acceptance criteria / resolved / standing) turn a raw defect list into "here's what's actually new, here's what's still open, here's what you can ignore."
 - **Runtime verification runs before synthesis on purpose.** Ranking findings before observing them produces confident, wrong severities — measurement routinely turns a "Major" into a nit, and the baseline A/B routinely surfaces something no agent proposed. A report written from code-reading alone is a list of hypotheses presented as findings.
-- This skill does NOT run builds, linters, or tests — use `/pre-pr` for that. (Phase 3 *runs the app* for behavioural verification, which is a different thing.)
+- **Don't build locally — the build you want is already deployed.** A production build is minutes of CPU for something CI runs on every push, and its output *is* the PR preview that Phase 3 drives, so running it yourself buys nothing the preview hasn't already given you. Getting CI green is the author's job, not the review's. Cheap checks are the opposite case: a type-check or a unit run is seconds, and running those **as evidence for a finding** — confirming a claimed breakage, mutation-testing a recommended test (3g) — is the point, not a detour. The rule is about cost and redundancy; read as "never execute anything" it produces reviews that recommend tests nobody has run.
 - **Phases 0–5 take no public action.** Only Phase 6 does, and it never posts before the user has seen the exact text and named the verdict.
 - Phases 3 and 6 are **project-agnostic**: they discover how to run, authenticate, seed, and post from the *project's own* `CLAUDE.md` / docs, so the skill stays portable across repos. If a project doesn't document these, ask rather than hardcoding.
