@@ -32,10 +32,16 @@ Run a thorough pull request review using parallel domain-specialized agents, eac
 ### 0b. Fetch the history — then distill, don't dump
 
 ```bash
-gh pr view <PR#> --json title,body,author,labels,closingIssuesReferences,reviewDecision
+gh pr view <PR#> --json title,body,author,labels,closingIssuesReferences,reviewDecision,mergeStateStatus
+gh pr view <PR#> --json commits --jq '.commits[].oid'                                               # what's on the branch now
 gh pr view <PR#> --json reviews --jq '.reviews[] | "[\(.submittedAt)] \(.author.login) (\(.state)): \(.body)"'
-gh api repos/<owner>/<repo>/pulls/<PR#>/comments --paginate \
-  --jq '.[] | "[\(.created_at)] \(.user.login) @ \(.path):\(.line // .original_line)\n\(.body)"'   # inline line-level
+# Inline threads WITH resolution state. REST /pulls/<n>/comments carries no such field —
+# a ledger built on it presents settled points as open. Only GraphQL has isResolved.
+gh api graphql -f query='
+{ repository(owner:"<owner>", name:"<repo>") { pullRequest(number:<PR#>) {
+    reviewThreads(first:100) { nodes {
+      isResolved isOutdated resolvedBy { login } path line
+      comments(first:5) { nodes { author { login } createdAt originalCommit { oid } body } } } } } } }'
 gh api repos/<owner>/<repo>/issues/<PR#>/comments --paginate \
   --jq '.[] | "[\(.created_at)] \(.user.login): \(.body)"'                                          # conversation
 gh pr checks <PR#> 2>/dev/null || true                                                              # CI state
@@ -44,13 +50,17 @@ For each **linked issue** in `closingIssuesReferences` (and any `Closes #N` / `F
 ```bash
 gh issue view <n> --json title,body
 ```
-Watch for **bot summaries** in the PR body and reviews (Greptile, Cursor, CodeRabbit): they often carry a confidence score and a cited blocker on the *current* head — that is a standing finding, not to be re-discovered.
+**Read thread state, never infer it.** `isResolved` decides what goes in which ledger, and three things routinely mislead:
+
+- **`resolvedBy` matters as much as `isResolved`.** A bot that resolved its *own* thread after a rebase orphaned the anchor commit has not been satisfied by anyone — the author never touched it, and equally it may no longer apply. Compare each thread's `originalCommit` against the commits now on the branch: an anchor on an orphaned commit means that thread was never evaluated against the current head, in either direction.
+- **A bot's PR-body summary is a separate signal from its threads.** Greptile and Cursor rewrite a block inside the description in place, so that block can assert a live blocker on the current head while every inline thread reads resolved — or be stale, pinned to a commit the branch no longer contains. Check which SHA the block names before treating it as either.
+- **Nothing is "blocking" unless something actually blocks.** An empty `reviewDecision` with `mergeStateStatus: CLEAN` means no approval is required and no change request is outstanding. Never tell an author to dismiss a blocker that does not exist.
 
 ### 0c. Produce three artifacts — passed verbatim to every agent (like the conventions brief)
 
-1. **Acceptance criteria** — what the PR must actually do, distilled from the PR description **and** the linked issues. Agents check the diff *against* this, not just for generic defects. A stated goal the diff silently fails to meet, or an explicit maintainer note (e.g. *"automated tests were intentionally skipped"*), is a **first-class finding**.
-2. **Resolved ledger** — points raised in prior human/bot review that the author has **since addressed**. Agents must **NOT** re-raise these. Spot-check a sample against the current diff — a reviewer may have asked for X and the author only did it partially (that partial gap *is* still a finding).
-3. **Standing ledger** — points raised in prior review that are **still unaddressed** on the current head: unresolved maintainer comments and live bot blockers (with the reviewer + file cited). The review should **confirm and surface these as standing** (attributed to who first raised them), not dress them up as new discoveries.
+1. **Acceptance criteria** — what the PR must actually do, distilled from the PR description **and** the linked issues. Agents check the diff *against* this, not just for generic defects. A stated goal the diff silently fails to meet, or an explicit maintainer note (e.g. *"automated tests were intentionally skipped"*), is a **first-class finding**. Capture alongside it **what the description already claims to fix, and how** — every bug the author names, every mechanism they explain. This half is what stops the review handing the author their own writeup back as a discovery; a finding that restates a described fix survives only as the *delta* (usually one sentence: the fix is bigger than claimed, or the stated mechanism is wrong).
+2. **Resolved ledger** — every thread with `isResolved: true`, plus points the current diff shows are handled. Agents must **NOT** re-raise these. Record *who* resolved each: author-resolved means addressed, bot-self-resolved after a force-push means only that the anchor died. Spot-check a sample against the current diff — a reviewer may have asked for X and the author only did it partially (that partial gap *is* still a finding).
+3. **Standing ledger** — threads with `isResolved: false`, plus any bot body-summary claim that names the current head (with the reviewer + file cited). The review should **confirm and surface these as standing** (attributed to who first raised them), not dress them up as new discoveries. If this ledger is empty, say so — a PR with nothing outstanding is a materially different review from one with open threads.
 
 Also note the **reviewers already involved** (human vs bots) and the PR's `reviewDecision` — this calibrates tone and how much is worth repeating. The three ledgers flow into Phase 2 (agents avoid resolved items, hunt against acceptance criteria) and Phase 4 (each finding is reconciled against them).
 
@@ -595,6 +605,7 @@ The Phase 3 artifacts are half the deliverable — a console table proves a find
 - **The remedy ladder is the one rule here that was measured before it was written.** Baseline: five reviewers handed an invariant that had already drifted (a predicate whose callers must agree, one of which silently didn't) all proposed the same thing — a wrapper plus a test that greps for the literal. One of five went further. With the ladder in front of them, five of five instead removed the possibility of the miss, and named the rung they were on. The lesson generalizes past this rule: three other candidate additions were drafted from a single observed failure, and when the same baseline was run they turned out to be things reviewers already did unprompted. Guidance aimed at a failure the population doesn't have makes the skill longer and fixes nothing — run the control before writing the paragraph.
 - **Track B exists because Track A structurally cannot see removals.** Agents organized by code artifact (data, logic, components, tests) or code virtue (reuse, simplicity) all inspect the code that is *there*. "This used to happen and no longer does" is invisible to every one of them — it has no file to live in. That is why it needs its own agent and its own evidence type, not a checklist item inside an existing one.
 - **Phase 0 (PR/issue context) is what makes a review of a PR-with-history worth reading** — without it the review re-litigates points the maintainer already resolved, misses acceptance criteria the diff silently fails, and can't tell a fresh find from a months-old standing blocker. The three ledgers (acceptance criteria / resolved / standing) turn a raw defect list into "here's what's actually new, here's what's still open, here's what you can ignore."
+- **Both halves of Phase 0b are there because the review failed at them, in the same direction, on the same PR.** First it fetched inline comments over REST — which has no `isResolved` — and reported four bot threads as standing blockers when all four were resolved and the PR was `CLEAN`, recommending the author "dismiss" a block that did not exist. Then, told to drop the bot framing, it wrote a paragraph explaining a bug the author's own description already named and already said it was fixing. Both are the same error: findings written up without being reconciled against what is already on the PR, which reads to the author as either alarmism or as being handed their own writeup back. The prior-art the review must reconcile against is *comments plus the description* — and for comments, the state must be queried, never inferred from the fact that a comment exists.
 - **Runtime verification runs before synthesis on purpose.** Ranking findings before observing them produces confident, wrong severities — measurement routinely turns a "Major" into a nit, and the baseline A/B routinely surfaces something no agent proposed. A report written from code-reading alone is a list of hypotheses presented as findings.
 - **3b's precondition rule comes from a near-miss.** A predicted focus regression measured identical on both builds — because the button being clicked wrote back the same value, so nothing re-rendered and the mechanism under test never ran. The probe was inert, the reading was clean, and the finding was real and nearly dropped. A confirmed defect announces itself; this failure mode is silent, which is why it needs a rule rather than attention.
 - **Artifacts are the deliverable, not a by-product.** A number in a transcript is something the reader has to take on trust; an image is something they can check. That is why 3f's requirements are all-or-nothing — a capture that happened but explains nothing, or explains itself but was never linked, leaves the reader exactly where a bare assertion would have.
