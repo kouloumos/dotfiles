@@ -28,28 +28,13 @@
         "systems": "systems"
       },
       "locked": {
-        "lastModified": 1784464345,
-        "narHash": "sha256-RD2hY1Q8fD6Js1vaXWXipXBkhMsLHeXYFMcxlFDbruo=",
+        "lastModified": 1784646674,
+        "narHash": "sha256-u9KlVTchlADSirPd995rSrAwyw5FnfxpIZF19gzd6Z4=",
         "path": "/home/kouloumos/personal_projects/my-toolkit",
         "type": "path"
       },
       "original": {
         "path": "/home/kouloumos/personal_projects/my-toolkit",
-        "type": "path"
-      }
-    },
-    "nix-openclaw-tools": {
-      "inputs": {
-        "nixpkgs-playwright": "nixpkgs-playwright"
-      },
-      "locked": {
-        "lastModified": 1784453383,
-        "narHash": "sha256-b+YObsm0Vw6hjx16CrA7WDz75AY1PbRQRrk2QoUxRqg=",
-        "path": "/home/kouloumos/schema-labs/projects/nix-openclaw/tools",
-        "type": "path"
-      },
-      "original": {
-        "path": "/home/kouloumos/schema-labs/projects/nix-openclaw/tools",
         "type": "path"
       }
     },
@@ -117,12 +102,28 @@
         "type": "github"
       }
     },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1771848320,
+        "narHash": "sha256-0MAd+0mun3K/Ns8JATeHT1sX28faLII5hVLq0L3BdZU=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "my-toolkit": "my-toolkit",
-        "nix-openclaw-tools": "nix-openclaw-tools",
         "nixpkgs": "nixpkgs_2",
-        "nixpkgs-unstable": "nixpkgs-unstable"
+        "nixpkgs-unstable": "nixpkgs-unstable",
+        "toolkit": "toolkit"
       }
     },
     "systems": {
@@ -137,6 +138,26 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default-linux",
+        "type": "github"
+      }
+    },
+    "toolkit": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_3",
+        "nixpkgs-playwright": "nixpkgs-playwright"
+      },
+      "locked": {
+        "lastModified": 1786546168,
+        "narHash": "sha256-qagxdfJfNSeKPlaro35ZrUIM0o6sSW48jXqYmHRVWfw=",
+        "owner": "schemalabz",
+        "repo": "toolkit",
+        "rev": "aaf133d31e60f64abc1394d77ba7786e3492f017",
+        "type": "github"
+      },
+      "original": {
+        "owner": "schemalabz",
+        "ref": "v2026.8.1",
+        "repo": "toolkit",
         "type": "github"
       }
     }

@@ -8,12 +8,10 @@
         url = "path:/home/kouloumos/personal_projects/my-toolkit";                                                                         
       };
 
-      # Web-access CLIs (page-read, playwright-run). Consumes ONLY the tools
-      # sub-flake, so it inherits just nixpkgs-playwright — none of nix-openclaw's
-      # server-deployment inputs. Switch to github:schemalabz/nix-openclaw?dir=tools
-      # once it's pushed upstream.
-      nix-openclaw-tools = {
-        url = "path:/home/kouloumos/schema-labs/projects/nix-openclaw/tools";
+      # Web-access CLIs (page-read, playwright-run) — see the browser-scripting
+      # skill. Same packages the team gets via `nix run`, pinned to a release.
+      toolkit = {
+        url = "github:schemalabz/toolkit/v2026.8.1";
       };                                                                                                                                   
     };                                                                                                                                     
                                                                                                                                            
