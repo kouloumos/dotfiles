@@ -286,6 +286,9 @@
   # Enroll via GNOME Settings -> Users -> Fingerprint Login, or `fprintd-enroll`.
   services.fprintd.enable = true;
 
+  # Firmware updates via LVFS (Framework ships BIOS/EC updates through fwupd).
+  services.fwupd.enable = true;
+
   services.avahi = {
     enable = true;
     hostName = "kouloumos-framework";
