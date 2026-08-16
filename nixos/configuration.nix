@@ -214,7 +214,7 @@
     inputs.toolkit.packages.${pkgs.system}.page-read
     inputs.toolkit.packages.${pkgs.system}.playwright-run
 
-     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
+     vim-full # vim with +clipboard (wayland) support; the default vim package is a minimal build without it
      wget
      git
      ffmpeg
