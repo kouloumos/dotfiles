@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "claude-desktop": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs-unstable"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786691558,
+        "narHash": "sha256-J91uCr1qm2mEtdGI965yHrhX53Qxklq+uqSCV7cVuPU=",
+        "owner": "nmcbride",
+        "repo": "claude-desktop-nix",
+        "rev": "8f4458269c5b09d0d59a673925b82f2abd9eff65",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nmcbride",
+        "repo": "claude-desktop-nix",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": [
@@ -120,6 +140,7 @@
     },
     "root": {
       "inputs": {
+        "claude-desktop": "claude-desktop",
         "my-toolkit": "my-toolkit",
         "nixpkgs": "nixpkgs_2",
         "nixpkgs-unstable": "nixpkgs-unstable",
