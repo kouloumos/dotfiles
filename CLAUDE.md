@@ -10,6 +10,7 @@
 ## Infrastructure
 - Prefer Nix and flakes for dev environments and service management. Avoid Docker when possible.
 - When Docker is the only upstream option, present the tradeoffs and explore Nix-native alternatives before defaulting to Docker.
+- **DigitalOcean: always pass `--context`, never `doctl auth switch`.** `~/personal_projects/*` → `personal`; `~/schema-labs/*` → `default` (Schema Labs). Another session can change the active context mid-task with no error, and it defaults to work.
 
 ## Dotfiles & Skills
 - Claude Code skills and global config are managed in `~/personal_projects/dotfiles/`

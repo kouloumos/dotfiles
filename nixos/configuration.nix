@@ -209,6 +209,7 @@
      v4l-utils # for virtual camera support
      zoom-us
      gh
+     doctl
      libreoffice
      # https://nixos.wiki/wiki/OBS_Studio
     ] ++ lib.optionals enableObsPtzPlugin [(unstable.wrapOBS {
