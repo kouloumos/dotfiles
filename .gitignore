@@ -1,0 +1,9 @@
+# Generated superpowers plans/specs: working documents for a task, not repo
+# content. They go stale as soon as the work lands.
+docs/superpowers/
+
+# Browser-automation scratch. The browser-scripting skill's gh-login.mjs writes
+# a live GitHub session -- cookies included -- to .scratch/gh-session.json by
+# default, relative to whatever directory it happens to run in.
+.scratch/
+*session*.json
