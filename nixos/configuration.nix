@@ -91,33 +91,6 @@
   # Pick only one of the below networking options.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
   networking.networkmanager.enable = true;  # Easiest to use and most distros use this by default.
-  # for using PTZ camera on the same network
-  # Create a persistent NetworkManager connection profile for PTZ camera
-  environment.etc."NetworkManager/system-connections/Camera-Ethernet.nmconnection" = {
-    mode = "0600";
-    user = "root";
-    group = "root";
-    text = ''
-      [connection]
-      id=Camera-Ethernet
-      # You can generate a new UUID by running `uuidgen` in a terminal, 
-      # or use this fresh one I generated for you:
-      uuid=563d1209-556b-4f91-9e7c-871026052345
-      type=802-3-ethernet
-      autoconnect=true
-
-      [ipv4]
-      method=manual
-      address1=192.168.0.100/24
-
-      [ipv6]
-      method=disabled
-
-      [ethernet]
-      # Binding to the MAC address ensures this config always finds the correct adaptor
-      mac-address=XX:XX:XX:XX:XX:XX
-    '';
-  };
 
   # Configure network proxy if necessary
   # networking.proxy.default = "http://user:password@proxy:port/";
