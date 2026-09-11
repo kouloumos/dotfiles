@@ -127,6 +127,20 @@
     wireplumber.enable = true;
   };
 
+  # Hardware video acceleration (VA-API). Without the Intel driver, Firefox's
+  # VA-API self-test fails (FEATURE_FAILURE_VIDEO_DECODING_TEST_FAILED) and it
+  # software-decodes every video frame on the CPU.
+  hardware.graphics = {
+    enable = true;
+    extraPackages = with pkgs; [
+      intel-media-driver # iHD: Gen12 / Alder Lake Iris Xe - H.264, VP9, AV1 decode
+    ];
+  };
+
+  # i915 and xe are both loaded; name the driver rather than rely on libva
+  # autodetection. Applies to sessions started after the next login.
+  environment.sessionVariables.LIBVA_DRIVER_NAME = "iHD";
+
   hardware.bluetooth = {
     enable = true;                                                                                                                                                                                                             
     settings = {  
@@ -207,6 +221,7 @@
      discord
      rustdesk
      v4l-utils # for virtual camera support
+     libva-utils # vainfo: verify VA-API hardware decode is actually live
      zoom-us
      gh
      doctl
