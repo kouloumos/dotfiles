@@ -201,6 +201,13 @@
     inputs.toolkit.packages.${pkgs.system}.page-read
     inputs.toolkit.packages.${pkgs.system}.playwright-run
 
+    # OpenAI Codex CLI. From `unstable`, not `pkgs`: codex ships several
+    # releases a week and our 26.05 pin lags badly (0.133.0 vs upstream
+    # 0.156.1), while nixos-unstable tracks it same-day. Bump with
+    # `nix flake update nixpkgs-unstable` — note that also rebuilds
+    # claude-desktop and the wrapped OBS below, which follow the same input.
+    unstable.codex
+
      vim-full # vim with +clipboard (wayland) support; the default vim package is a minimal build without it
      wget
      git
