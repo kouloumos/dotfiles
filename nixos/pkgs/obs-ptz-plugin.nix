@@ -2,6 +2,9 @@
 , stdenv
 , fetchurl
 , dpkg
+, autoPatchelfHook
+, qt6
+, obs-studio
 }:
 
 stdenv.mkDerivation rec {
@@ -13,7 +16,23 @@ stdenv.mkDerivation rec {
     sha256 = "sha256-wu42LYQslZB9ZY2nMQvUf5cWS6gLlQPB9UWA2cx/fa4=";
   };
 
-  nativeBuildInputs = [ dpkg ];
+  nativeBuildInputs = [ dpkg autoPatchelfHook ];
+
+  # The .deb's obs-ptz.so links Qt6 (Core/Gui/Widgets/Network/Xml/SerialPort)
+  # and libobs. Without an rpath it relied on OBS having those loaded already,
+  # which works for everything except Qt6SerialPort — so OBS rejected the
+  # plugin with "libQt6SerialPort.so.6: cannot open shared object file".
+  # Link against the same qt6/obs-studio set the wrapped OBS uses (this is
+  # callPackage'd from `unstable`, like wrapOBS), so only one Qt gets loaded.
+  buildInputs = [
+    qt6.qtbase
+    qt6.qtserialport
+    obs-studio
+    stdenv.cc.cc.lib
+  ];
+
+  # A plugin library, not a Qt application: nothing to wrap.
+  dontWrapQtApps = true;
 
   unpackPhase = ''
     dpkg-deb -x $src .
