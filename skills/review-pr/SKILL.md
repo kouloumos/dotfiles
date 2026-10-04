@@ -1,12 +1,12 @@
 ---
-description: "Deep PR review using parallel specialized agents, with optional runtime/visual verification and evidence-backed review posting. Use before merging to catch real issues."
+description: "Deep PR review using parallel specialized agents, runtime verification, and a guided tour of the real diff (an interactive page that walks the change in the order it works, with findings on their lines) for the human reviewer; then evidence-backed review posting. Use before merging to catch real issues and to understand the change."
 argument-hint: "[pr-number | base-branch]"
-allowed-tools: ["Bash", "Glob", "Grep", "Read", "Edit", "Write", "Agent"]
+allowed-tools: ["Bash", "Glob", "Grep", "Read", "Edit", "Write", "Agent", "Artifact"]
 ---
 
 # Deep PR Review
 
-Run a thorough pull request review using parallel domain-specialized agents, each bringing deep expertise to a different aspect of the code. This is not a linter — it catches the issues that only an experienced reviewer would find.
+Run a thorough pull request review using parallel domain-specialized agents, each bringing deep expertise to a different aspect of the code. This is not a linter — it catches the issues that only an experienced reviewer would find. Its main deliverable to the human reviewer is a guided tour of the real diff (Phase 5): the reviewer's job is now to understand the change and decide, and the tour is how they do it.
 
 **Argument:** $ARGUMENTS — a **PR number** (e.g. `218`), a **base branch** (e.g. `develop`), or empty. Phase 0 resolves which. When it resolves to a GitHub PR, the review is grounded in that PR's history (description, linked issues, prior reviews) so it doesn't re-litigate settled points. Default base branch: auto-detect from `main` or `master`.
 
@@ -100,6 +100,8 @@ Before launching agents, collect the information they all need.
 5. **Make the checkout runnable.** Check whether the project's dependencies actually resolve (`node_modules` present *and* containing the packages the diff imports — a stale tree is worse than an absent one, because it fails late). If they don't, install them now. This is a two-minute step that decides how much of the review is code-reading and how much is evidence: with a runnable checkout, agents can run the type-checker and the suite, and Phase 3 can mutation-test a proposed test. Tell every agent explicitly what it *can* execute — an agent told "you cannot run tests" will not try.
 
 6. **Read the third-party behaviour the diff leans on.** If the PR's correctness depends on how a library or framework behaves — lifecycle and instantiation, caching, ordering, how many times something is invoked, what a wrapper passes its callback — find that behaviour in the package's own source and read it. `npm pack <pkg>@<range> && tar xzf` gets you the published dist when the package isn't installed. Note what you confirmed; it goes to the agents as fact, and it is the one class of assumption they cannot check for themselves.
+
+7. **Inventory the diff for the guided tour** (skip when Phase 5 will build no tour; see `references/guided-tour.md` § Scale). Run `references/tour/make_hunks.py --repo KEY=PATH:BASE:HEAD:OWNER/NAME [--repo …] -o ~/review-<repo>-<pr>/hunks.json` for every repo the change spans, then one agent annotates every hunk with `references/tour/inventory-prompt.md` (role, chapter, key hunks, focus ranges). Pass the chapter map to the Phase 2 agents, and ask them to name the chapter of each finding: it makes the tour's placement trivial.
 
 ### Learn the codebase's conventions
 
@@ -523,9 +525,11 @@ After all agents complete and the runtime results are in, **you** (not another a
 
 8. **Organize into the final report**
 
-## Phase 5: Report
+## Phase 5: The guided tour, then the report
 
-Present the synthesized review to the user:
+**The tour is the main deliverable to the reviewer.** Build it before the chat report, following `references/guided-tour.md` (method, authoring rules, verification, critique pass) and `references/tour/tour-schema.md` (the `tour.json` contract). In short: author `tour.json` from the synthesis (steps in the order the change works, the related hunks of all repos together, findings on their lines with a `forYou` line, callouts, checks, glossary, real records), build it with `references/tour/build_tour.py`, verify every step renders, run one critique agent, fix, and publish it as a private Artifact. After Phase 6 changes the drafts, rebuild so the last step shows what was posted. Skip the tour only for the trivial PRs § Scale names, and say so.
+
+Then the chat report. When a tour exists, keep the chat short: the context header, the acceptance-criteria check, the findings as one line each with their severity and tags, the recommendation, and the tour link. The full report below is for reviews without a tour:
 
 When the review targets a PR, open with a one-line context header (`reviewDecision`, who has already reviewed, current bot confidence if any) and an **Acceptance criteria** check, then the severity sections. Tag each finding **[NEW]**, **[STILL-OPEN → @who]**, so the reader instantly sees what's genuinely new versus a confirmed standing item. Put confirmed-but-old items in the **Standing items** section, not mixed into the fresh findings. Omit the PR header and these two sections for a diff-only review.
 
@@ -583,6 +587,12 @@ On a team-member PR, don't default every finding to a comment — shipping an ob
 - **Decide body-vs-inline against the diff, not against the finding.** An inline comment exists only where its line sits inside a diff hunk. A finding about a file the PR never touched — a missing test, an un-updated caller, an invariant elsewhere that the diff silently depends on — *cannot* be inline, and those are common in exactly the reviews worth writing. Resolve every intended anchor with `references/check-anchors.py` **while drafting**, not at staging time: finding out at POST time means re-splitting a draft the user has already approved. Anything it reports UNUSABLE moves into the body **and keeps its `file:line` there** — the one case where the body carries references.
 - **Voice:** match the reviewer's established voice and the project's norms — concise, conversational, code-referencing, actionable, honest (credit good work too). No emoji, no "Great work" openers, no walls of headers/bullets. Include only points that actually came up.
 - **Adversarial pass (mandatory, before showing the draft):** challenge every claim as if refuting it. *Verified or inferred?* — state inferences as such and turn unverifiable ones into questions. *No incident-time specifics* ("last night 02:08" → "a failed staging run"). *Does each comment earn its place?* — rare-path/non-blocking notes fold into the main comment or drop. *Already stated by the author?* — shrink to a one-line independent confirmation.
+- **Write it the way the reviewer wants it posted** (lessons from the first tour's review, 2026-10-04):
+  - **Open with the substance**, never by positioning against another reviewer ("This adds to X's review" was rejected).
+  - **Each fact in one place.** When a change spans several PRs, give each fact a home in the PR whose code it is about and point to it from the others; the same table or number in two reviews reads as padding.
+  - **Observations, not prescriptions, for design-level weaknesses.** Give what happens, the concrete case, and a question that lets the author verify it on their own data; leave the fix to them. Solutions only for mechanical fixes.
+  - **Short and numbered.** A body with 2–4 numbered asks and one-paragraph points; detail lives in the inline comment on the line. Cut "checked and fine" paragraphs and points the reviewer cannot defend or did not validate.
+  - **No private persons' names in public comments**, even when they appear in public data; blank them ("είμαι ο ___").
 - **Self-explanatory — test it, don't ask it.** Asked as a yes/no it always passes, because you answer it from inside the investigation where every reference already resolves. Make it mechanical instead: a finding that turns on a *sequence* — two writes, two guards, an ordering, a race window — must lay that sequence out, what happens first, what happens second, and what the reader would observe. If the comment says "the gap", "the window", "the second guard", that thing has to be spelled out in the same comment rather than in your head. Then reread it as someone who has never opened the file: if you have to consult the file to follow your own comment, rewrite it.
 
 ### Attach evidence
@@ -596,6 +606,7 @@ The Phase 3 artifacts are half the deliverable — a console table proves a find
 
 ## Notes
 
+- **The guided tour (Phase 5) exists because a findings report does not give understanding.** Three formats were tried on the first case: a story page ("a wall of text"), a scroll story with a live data stage ("promising, but not there"), and a guided tour of the real diff ("I like this"). The tour won because it balances the code with the overview and the flow, and covers every changed line by construction. `references/guided-tour.md` holds the feedback and the open questions; change it from the feedback log of real tours, not from taste.
 - Each agent reads the actual code, not just the diff — this catches issues where changed code interacts with existing code
 - Agents read CLAUDE.md and CONTRIBUTING.md to enforce project-specific rules, not just generic best practices
 - **Convention discovery (Phase 1) is what makes "does this fit?" answerable** — without the shared-primitives inventory and the validation/type/naming conventions, agents fall back to generic best-practice and miss codebase-specific divergences
