@@ -11,9 +11,13 @@ from make_hunks.py and is annotated by the inventory agent. The build:
     for the rest), so the tour covers the whole diff by construction;
   - places each finding and callout on a shown line (or reports it unplaced);
   - injects the data into template.html (next to this script).
-Exit code 1 if a slice names an unknown hunk or a finding cannot be placed.
+  - collects every media file (img/video/ab blocks, finding and note `media`),
+    checks it exists, copies it to <out dir>/media/, and rewrites `src` to
+    that relative path; the list is printed for publishing alongside the page.
+Exit code 1 if a slice names an unknown hunk, a finding cannot be placed, or
+a media file is missing.
 """
-import argparse, json, os, re, sys
+import argparse, json, os, re, shutil, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,6 +41,7 @@ def lines_of(h):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tour", required=True); ap.add_argument("--hunks", required=True); ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--media-root", help="directory media `src` paths are relative to (default: the tour's directory)")
     a = ap.parse_args()
     tour = json.load(open(a.tour)); inv = json.load(open(a.hunks))
     H = {h["id"]: h for h in inv["hunks"]}
@@ -104,6 +109,46 @@ def main():
         if not placed:
             errors.append(f"unplaced {f.get('who')} item at {f['repo']}:{f['path']}:{f['line']} — '{f.get('title', '')[:60]}'")
 
+    # media: validate, copy next to the page, rewrite src
+    media_root = a.media_root or os.path.dirname(os.path.abspath(a.tour))
+    out_dir = os.path.dirname(os.path.abspath(a.out)); media = {}
+
+    def fix(src):
+        if re.match(r"^(https?:|data:)", src): return src
+        path = src if os.path.isabs(src) else os.path.join(media_root, src)
+        if not os.path.isfile(path):
+            errors.append(f"missing media file {src}"); return src
+        name = os.path.basename(path); rel = "media/" + name
+        if media.get(rel, path) != path: errors.append(f"two media files named {name}")
+        media[rel] = path; return rel
+
+    def walk(blocks):
+        for b in blocks or []:
+            if b.get("type") in ("img", "video"):
+                b["src"] = fix(b["src"])
+                if b.get("poster"): b["poster"] = fix(b["poster"])
+            elif b.get("type") == "ab":
+                for side in ("before", "after"): b[side]["src"] = fix(b[side]["src"])
+
+    for st in steps:
+        walk(st.get("blocks"))
+        for v in (st.get("panel") or {}).values(): walk(v)
+        for n in st.get("notes", []): walk(n.get("media"))
+        for sl in st["slices"]:
+            for f in sl.get("findings", []): walk(f.get("media"))
+    # media referenced from the drafts (GitHub-style lines: <img ... src="...">, ![alt](src), or a bare video path)
+    def fix_draft(text):
+        text = re.sub(r'(<img\b[^>]*\bsrc=")([^"]+)(")', lambda m: m.group(1) + fix(m.group(2)) + m.group(3), text)
+        text = re.sub(r'^(\s*!\[[^\]]*\]\()([^)\s]+)(\)\s*)$', lambda m: m.group(1) + fix(m.group(2)) + m.group(3), text, flags=re.M)
+        return re.sub(r'^(\s*)(\S+\.(?:webm|mp4|mov))(\s*)$', lambda m: m.group(1) + fix(m.group(2)) + m.group(3), text, flags=re.M | re.I)
+    if tour.get("drafts"):
+        tour = {**tour, "drafts": {k: fix_draft(v) for k, v in tour["drafts"].items()}}
+    if media:
+        os.makedirs(os.path.join(out_dir, "media"), exist_ok=True)
+        for rel, path in media.items():
+            dst = os.path.join(out_dir, rel)
+            if os.path.abspath(dst) != os.path.abspath(path): shutil.copyfile(path, dst)
+
     data = {k: v for k, v in tour.items() if k not in ("steps", "findings", "callouts")}
     data["steps"] = steps
     data["repos"] = {k: {**tour.get("repos", {}).get(k, {}), "head": inv["repos"][k]["head"], "github": tour.get("repos", {}).get(k, {}).get("github") or inv["repos"][k].get("github")} for k in inv["repos"]}
@@ -113,6 +158,8 @@ def main():
     open(a.out, "w").write(page)
     changed = sum(h["added"] + h["removed"] for h in inv["hunks"])
     print(f"{len(steps)} steps, {sum(len(s['slices']) for s in steps)} slices, {changed} changed lines, {len(anchored)} anchored items, {len(page) // 1024} KB -> {a.out}")
+    if media:
+        print(f"{len(media)} media files -> {os.path.join(out_dir, 'media')}/ (publish alongside the page: see tour-schema.md, Media files)")
     for e in errors:
         print("ERROR:", e, file=sys.stderr)
     sys.exit(1 if errors else 0)

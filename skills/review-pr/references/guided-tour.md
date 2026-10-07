@@ -36,7 +36,7 @@ Decide in Phase 1, from the diff size and the kinds of change:
 2. **Author `tour.json` (Phase 5)**, after synthesis, when the findings are final. Contract: `tour/tour-schema.md`. The orchestrator writes it, not an agent: the tour needs one voice and the full picture.
 3. **Build.** `build_tour.py --tour tour.json --hunks hunks.json -o index.html`. Exit 1 means a slice names an unknown hunk or a finding has no shown line: fix the tour, do not ignore it.
 4. **Verify** (checklist below), then one **critique pass** by an agent, then fix what it finds.
-5. **Publish** as a private Artifact (`Artifact` tool, icon `review`). Republish the same file path after changes, so the link stays. Never link it from the public review: it may hold production data.
+5. **Publish** as a private Artifact (`Artifact` tool, icon `review`). Republish the same file path after changes, so the link stays. With media, publish the files alongside the page (see `tour-schema.md` § Media files). Never link it from the public review: it may hold production data.
 6. **Collect feedback** (below). The tour improves only from what reviewers say about real ones.
 
 Keep all working files in `~/review-<repo>-<pr>/` (tour.json, hunks.json, index.html, critique.md), not in the session scratchpad.
@@ -58,12 +58,14 @@ Rules from the research on how reviewers read changes (Baum et al. 2017 on order
 11. **2–4 "check here" questions per step**: what a reviewer should be able to answer before moving on.
 12. **Glossary and entities.** Every term the change introduces, every word with two meanings, and the tables or types involved with one line each.
 13. **Tests** in their own step, with a break-the-guard table if Phase 3 mutated anything: guard, test, caught or not.
-14. **Last step: the drafts** as posted or staged (`drafts` block).
+14. **Last step: the drafts** as posted or staged (`drafts` block). When a capture makes a finding land faster for the author — a UI defect, an error page, an interaction — put it in the draft too, on its own line in GitHub's form (`tour-schema.md`, `drafts`). The tour shows it in place, so the reader approves the review with its pictures. Before staging, upload each file (`posting.md` § Embedding images and video) and swap the local path for the returned URL; rebuild so the last step shows what was posted.
+15. **Pictures where the change is visible.** A step whose code changes what a user sees gets a screenshot of the result (`img`, or `ab` for desktop/phone or before/after), and a step that is a flow across pages gets a short recording (`video`). A finding that reproduced gets its capture in `media`, on its line. Capture with the same rules as SKILL.md 3f: highlight the element, put the state in a banner, hide dev overlays, and look at every image before it goes in. The reader should not need the preview to see what the step is about.
 
 ## Verify before publishing
 
 - The build exits 0 (every slice resolves, every finding is placed).
 - Serve it (`python3 -m http.server --bind 127.0.0.1`) and render **every step for every record** in the browser with a script; zero errors.
+- Every `img` loads (`complete && naturalWidth > 0`) and every `video` reaches `readyState ≥ 2`, at both widths. After publishing, list the artifact's files (`Artifact` `list`, `scope: files`) and check each media path is there.
 - Look once at desktop width (1440×900) and once at phone width (390×844): one-column layout, nothing cut, the top bar not eating the screen.
 - Read the overview as a stranger: does it say what changed, how it works, what we found, in 30 seconds?
 - Stop the server; reset the viewport.
@@ -84,6 +86,6 @@ Log them in the handoff file for this skill's iteration (see the session handoff
 ## Known gaps (from the first critique)
 
 - Values in the side panel are not linked to the code lines that produce them.
-- UI changes have no picture yet: a screenshot or mock in a step would land a UI finding faster.
+- ~~UI changes have no picture yet.~~ Added after the second tour (#810, 2026-10-07): `img`/`ab`/`video` blocks and finding `media`. The reviewer asked for it after using a tour without a single screenshot.
 - Tests are a separate step; placing each next to the code it exercises may be better.
 - "Go deeper" prompts are generic; per-step preset prompts may be more useful.

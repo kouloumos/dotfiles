@@ -17,7 +17,7 @@
 | `findings` | Review findings anchored to a line (see below). |
 | `callouts` | "How it works" notes on lines: `[[repo, path, line, text]]`. Explanation, not judgement. |
 | `tailSteps` | Optional prose for the two generated closing steps: `{restNew, rest, section}` (`section` defaults to "The rest"). |
-| `drafts` | `{label: markdown}`: the review drafts, shown by a `drafts` block. |
+| `drafts` | `{label: markdown}`: the review drafts, shown by a `drafts` block. A draft can carry media in the form GitHub takes: a line with only `<img width="900" alt="…" src="…">` or `![alt](src)`, or a bare video path or URL on its own line. Local paths go through the same media check and copy; `https:` URLs (an uploaded GitHub attachment) are left as they are. |
 
 ## A step
 
@@ -53,6 +53,7 @@
 - `who`: `ours`, `explain` (callouts set this), or another reviewer's name (rendered dashed, as context).
 - `sev`: `major`, `minor`, `nit`, `request`, `test`, `good`, `explain`.
 - The line must be a new-file line inside some step's slice; the build exits 1 and names the item otherwise.
+- `media` (optional): a list of `img` / `ab` / `video` blocks shown inside the finding card, so the screenshot or recording sits with the claim on its line. Notes (`steps[].notes`) take `media` too.
 
 ## Blocks
 
@@ -71,6 +72,15 @@ Used in `steps[].blocks` (main pane, after the prose) and `steps[].panel` (side 
 | `asks` | `items: [{label, text, step}]` — clickable list that jumps to a step |
 | `legend` | — the label and key legend |
 | `drafts` | — tabs over `drafts` |
+| `img` | `src`, `cap?`, `alt?`, `tag?` (small label above, e.g. "Desktop 1440"), `w?` (display width in px). Click opens a zoom overlay. |
+| `ab` | `before: {src, cap?, tag?}`, `after: {…}`, `cap?` — two images side by side, stacked at phone width. Tags default to "Before" / "After"; use them for any pair (desktop/phone, step 1/step 2). |
+| `video` | `src` (webm or mp4), `cap?`, `poster?` (an image; give one, or the first frame is often a loading state), `w?` |
+
+### Media files
+
+`src` is a path relative to the tour's directory (or `--media-root`), an absolute path, or an `https:`/`data:` URL. The build checks every local file exists (exit 1 if not), copies it to `<out dir>/media/<name>`, rewrites `src` to `media/<name>`, and prints the list. Names must be unique across the tour.
+
+To publish, the Artifact tool takes supporting files only from the working directory or the session scratchpad: copy `<out dir>/media` to `<scratchpad>/tour-<pr>/media`, then publish the page with `root: <scratchpad>/tour-<pr>` and `files: ["media/<name>", …]`. Republishing the same page path keeps the URL; pass the media again when it changes.
 
 ## Minimal example
 

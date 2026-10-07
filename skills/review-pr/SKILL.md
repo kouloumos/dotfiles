@@ -479,6 +479,8 @@ Screenshot or record **every finding that reproduces, at the moment it reproduce
 
 **Put them where the reader can open them, and link them.** Write artifacts to a stable directory outside any session scratchpad — `~/<pr-or-topic>-evidence/` — and in the report **link every one as a clickable `file:///absolute/path`**, with a one-line statement of what it shows. Artifacts that exist but are never surfaced did not happen: the reader's ability to check your work themselves is most of their value, and these are the same files that get uploaded in Phase 6.
 
+**Capture the change too, not only the defects.** When Phase 5 builds a tour, every step that changes something a user sees needs a picture of it, and every flow across pages a short recording. Take those during this phase, while the app is up and authenticated, from the same scripts that drive the probes. They go into the tour as `img` / `ab` / `video` blocks, and each finding's capture goes into its `media` (`references/tour/tour-schema.md`).
+
 ### 3g. Prove the tests you recommend
 
 A recommended test is a finding like any other, and "this test would catch the regression" is a claim needing its matching evidence. If Agent 4 could not run the suite, you do it here: write the test, watch it pass, then introduce each bug it claims to catch and watch it fail. Report the mutation table alongside it.

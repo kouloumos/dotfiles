@@ -99,6 +99,15 @@ dialog textarea{width:100%; min-height:140px; font:13px/1.5 var(--mono); backgro
 .asks{display:grid; gap:6px; max-width:900px} .asks button{text-align:left; font-size:13.5px; display:flex; gap:8px; align-items:baseline} .asks .pr{font:600 11px var(--mono); color:var(--muted); flex:none}
 .legend{display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:12px; color:var(--muted); margin-top:12px}
 .blk h3{font:600 15px var(--sans); margin:18px 0 6px}
+.media{margin:12px 0; max-width:100%}
+.media img,.media video{display:block; max-width:100%; height:auto; border:1px solid var(--line); border-radius:8px; background:var(--paper)}
+.media img{cursor:zoom-in}
+.media figcaption{font-size:12.5px; color:var(--muted); margin-top:5px; max-width:80ch}
+.media .tag{font:600 10.5px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:4px}
+.ab{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px}
+.fc .media{margin:8px 0 4px}
+#zoom{border:0; padding:0; max-width:96vw; max-height:94vh; background:transparent} #zoom::backdrop{background:rgba(0,0,0,.78)}
+#zoom img{display:block; max-width:96vw; max-height:90vh; height:auto} #zoom p{color:#eee; font-size:13px; margin:6px 2px}
 @media (prefers-reduced-motion:reduce){ *{transition:none !important} }
 </style>
 
@@ -116,6 +125,7 @@ dialog textarea{width:100%; min-height:140px; font:13px/1.5 var(--mono); backgro
   <aside class="side" id="side" aria-label="Flow and data"></aside>
 </div>
 <aside class="drawer" id="drawer" aria-label="Glossary and data model"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font:600 18px var(--serif)">Glossary &amp; data model</h3><button type="button" id="glclose">Close</button></div><div id="glbody"></div></aside>
+<dialog id="zoom" aria-label="Enlarged screenshot"><img id="zoomimg" alt=""><p id="zoomcap"></p></dialog>
 <dialog id="deep">
   <h3 style="margin:0 0 6px; font:600 17px var(--serif)">Go deeper</h3>
   <p style="margin:0 0 10px; font-size:13px; color:var(--muted)">This layer is not built yet. Copy the prompt and post it to the review session; it builds the layer from the real code and data and adds it to this step.</p>
@@ -126,6 +136,7 @@ dialog textarea{width:100%; min-height:140px; font:13px/1.5 var(--mono); backgro
 <script id="data" type="application/json">/*__DATA__*/null</script>
 <script>
 const D = JSON.parse(document.getElementById('data').textContent);
+document.addEventListener('click', e => { const z = document.getElementById('zoom'); if (z && z.open && (e.target === z || e.target.id === 'zoomimg')) z.close(); });
 const STEPS = D.steps; let at = 0; let rec = (D.records || [])[0] || null;
 const KEY = 'tour:' + (D.id || D.title || 'x') + ':';
 const $ = s => document.querySelector(s);
@@ -140,7 +151,9 @@ const labelOf = id => (LANES[id] || {}).label || ((D.repos || {})[id] || {}).lab
 $('#tname').textContent = D.title || 'Guided review'; $('#tintent').textContent = D.intent || '';
 
 function md(src) { let out = '', list = null, para = [], table = []; const fp = () => { if (para.length) { out += '<p>' + glink(inl(para.join(' '))) + '</p>'; para = []; } }, fl = () => { if (list) { out += '</' + list + '>'; list = null; } }, ft = () => { if (table.length) { const rows = table.filter(r => !/^\|\s*-/.test(r)).map(r => r.replace(/^\||\|$/g, '').split('|')); out += '<table>' + rows.map((r, i) => '<tr>' + r.map(c => (i ? '<td>' : '<th>') + inl(c.trim())).join('') + '</tr>').join('') + '</table>'; table = []; } };
-  for (const line of String(src || '').split('\n')) { if (/^\|/.test(line)) { fp(); fl(); table.push(line); continue; } else ft(); let m; if ((m = line.match(/^(#{1,3}) (.*)/))) { fp(); fl(); out += `<h${m[1].length + 1}>${inl(m[2])}</h${m[1].length + 1}>`; } else if ((m = line.match(/^\s*- (.*)/))) { fp(); if (list !== 'ul') { fl(); out += '<ul>'; list = 'ul'; } out += '<li>' + inl(m[1]) + '</li>'; } else if ((m = line.match(/^\s*\d+\. (.*)/))) { fp(); if (list !== 'ol') { fl(); out += '<ol>'; list = 'ol'; } out += '<li>' + inl(m[1]) + '</li>'; } else if (!line.trim()) { fp(); fl(); } else para.push(line.trim()); } fp(); fl(); ft(); return out; }
+  for (const line of String(src || '').split('\n')) { const mi = line.match(/^\s*<img\b[^>]*\bsrc="([^"]+)"[^>]*>\s*$/) || line.match(/^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$/), mv = line.match(/^\s*(\S+\.(?:webm|mp4|mov))\s*$/i);
+    if (mi || mv) { fp(); fl(); ft(); const box = document.createElement('div'); if (mv) box.append(BLOCK.video({ src: mv[1] })); else { const isImg = mi[0].trim().startsWith('<img'), alt = isImg ? ((mi[0].match(/\balt="([^"]*)"/) || [])[1] || '') : mi[1], src = isImg ? mi[1] : mi[2]; const w = isImg ? (mi[0].match(/\bwidth="(\d+)"/) || [])[1] : null; box.append(figure({ src, cap: alt, alt, w })); } out += box.innerHTML; continue; }
+    if (/^\|/.test(line)) { fp(); fl(); table.push(line); continue; } else ft(); let m; if ((m = line.match(/^(#{1,3}) (.*)/))) { fp(); fl(); out += `<h${m[1].length + 1}>${inl(m[2])}</h${m[1].length + 1}>`; } else if ((m = line.match(/^\s*- (.*)/))) { fp(); if (list !== 'ul') { fl(); out += '<ul>'; list = 'ul'; } out += '<li>' + inl(m[1]) + '</li>'; } else if ((m = line.match(/^\s*\d+\. (.*)/))) { fp(); if (list !== 'ol') { fl(); out += '<ol>'; list = 'ol'; } out += '<li>' + inl(m[1]) + '</li>'; } else if (!line.trim()) { fp(); fl(); } else para.push(line.trim()); } fp(); fl(); ft(); return out; }
 
 /* ---------- glossary ---------- */
 const GL = (D.glossary || []).map(([t, d]) => ({ t, d, key: t.split(' (')[0].split(' / ')[0].toLowerCase() }));
@@ -167,7 +180,14 @@ const BLOCK = {
   asks: b => h('div', { class: 'asks' }, ...b.items.map(a => h('button', { type: 'button', onclick: goId(a.step) }, h('span', { class: 'pr' }, a.label), h('span', {}, a.text)))),
   legend: () => h('div', { class: 'legend' }, 'Labels:', ...[['major', 'major'], ['minor', 'minor'], ['nit', 'nit'], ['request', 'request'], ['test', 'test gap'], ['explain', 'how it works'], ['good', 'checked']].map(([k, l]) => h('span', { class: 'chip s-' + k }, l)), h('span', { class: 'chip who' }, 'other reviewer'), 'Keys: J/K or [ ] move, M marks seen, G opens the glossary.'),
   drafts: b => { const box = h('div', { class: 'draft' }), tabs = h('div', { class: 'pick', style: 'margin-top:12px' }); const keys = Object.keys(D.drafts || {}); const show = k => { box.innerHTML = md(D.drafts[k]); for (const t of tabs.children) t.setAttribute('aria-pressed', String(t.dataset.k === k)); }; keys.forEach(k => tabs.append(h('button', { type: 'button', 'data-k': k, onclick: () => show(k) }, k))); if (keys.length) setTimeout(() => show(keys[0])); return h('div', {}, tabs, box); },
+  img: b => figure(b),
+  video: b => h('figure', { class: 'media' }, b.tag ? h('div', { class: 'tag' }, b.tag) : null, h('video', { src: b.src, controls: '', preload: 'metadata', playsinline: '', muted: '', poster: b.poster || null, style: b.w ? `width:${b.w}px` : null }), b.cap ? h('figcaption', { html: inl(b.cap) }) : null),
+  ab: b => h('div', {}, h('div', { class: 'ab' }, figure({ tag: b.before.tag || 'Before', ...b.before }), figure({ tag: b.after.tag || 'After', ...b.after })), b.cap ? h('p', { class: 'cap', style: 'font-size:12.5px;color:var(--muted)', html: inl(b.cap) }) : null),
 };
+function figure(b) {
+  const img = h('img', { src: b.src, alt: b.alt || b.cap || '', loading: 'lazy', style: b.w ? `width:${b.w}px` : null, onclick: () => { const z = $('#zoom'); $('#zoomimg').src = b.src; $('#zoomimg').alt = b.alt || b.cap || ''; $('#zoomcap').innerHTML = inl(b.cap || ''); z.showModal(); } });
+  return h('figure', { class: 'media' }, b.tag ? h('div', { class: 'tag' }, b.tag) : null, img, b.cap ? h('figcaption', { html: inl(b.cap) }) : null);
+}
 const blocks = list => (list || []).map(b => (BLOCK[b.type] || BLOCK.text)(b));
 
 /* ---------- coverage + rail ---------- */
@@ -187,6 +207,7 @@ function findingCard(f) {
   if (f.forYou && f.title && f.forYou !== f.title) c.append(h('div', { style: 'color:var(--muted);font-size:13px;margin-bottom:4px' }, 'Posted as: ' + f.title));
   const rest = f.text && f.title && f.text.startsWith(f.title) ? f.text.slice(f.title.length).trim() : f.text;
   if (rest && rest !== f.title) c.append(h('div', { class: 'x', html: md(rest) }));
+  if (f.media) c.append(...blocks(f.media));
   if (f.who === 'ours') c.append(h('button', { class: 'deep', type: 'button', 'data-deep': `Show the evidence behind this finding (${f.path || ''}${f.line ? ':' + f.line : ''}): "${f.forYou || f.title}". Run what is needed on real data and add it under the finding.` }, 'Go deeper: show the evidence'));
   return c;
 }
